@@ -707,17 +707,14 @@ function availability_(st, t, slot, anyDept) {
   return { tag, note: '', lunch: lunchInfo_(st, t, slot), load: load_(st, t, slot) };
 }
 
-// Covering a lunch period is allowed; this says whether they'd still have time to eat.
-// Returns null if the slot isn't their lunch, else { eatAlt: period number or 0 }.
+// Covering a lunch period is allowed but flagged. The app only says it's their lunch period;
+// it never suggests eating at another time (the cafeteria is only open 3, 4, 8 and 9).
+// Returns null if the slot isn't their lunch, else { lunch: true }.
 function lunchInfo_(st, t, slot) {
   const p = slot.period, day = slot.day, pair = CONFIG.LUNCH[day];
   if (pair.indexOf(p) < 0) return null;
   if (t.lunch[day] && t.lunch[day] !== p) return null; // their lunch is the other period
-  const covering = commitments_(st, t.email, slot.date).filter(c => c.slotId !== slot.id).map(c => c.period);
-  const near = pair.concat([pair[1] + 1]) // the lunch periods plus the one right after (a "double lunch")
-    .filter(x => CONFIG.DAYS[day].indexOf(x) > -1 && x !== p && x !== CONFIG.DEPT_PERIODS[t.dept]);
-  const alt = near.find(x => kind_(t.cells[x]) !== 'busy' && covering.indexOf(x) < 0);
-  return { eatAlt: alt || 0 };
+  return { lunch: true };
 }
 
 // The person's day if they take this slot
@@ -1623,7 +1620,7 @@ function legend(){
 }
 function lunchHtml(l,you){
   if(!l) return '';
-  return `<div class="warn">${you?'During your lunch':'During their lunch'}. ${l.eatAlt?`${you?'You':'They'} could eat during period ${l.eatAlt} instead.`:`No other free period to eat nearby, so half a period might work better.`}</div>`;
+  return `<div class="warn">This is during ${you?'your':'their'} lunch period.</div>`;
 }
 function warns(load,you){
   const w=[], ord=n=>n+(n===1?'st':n===2?'nd':n===3?'rd':'th'), who=you?'your':'their';
