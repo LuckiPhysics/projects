@@ -179,6 +179,44 @@ th{font-size:.85rem;color:var(--muted)}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 tr.me td{background:var(--gold-soft);font-weight:700}
 .empty{color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:6px;padding:18px;text-align:center}
+/* Month calendar (admins): school days Monday to Friday */
+.monthbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 0 10px}
+.monthbar h2{margin:0;text-align:center;flex:1}
+.msum{color:var(--muted);font-size:.92rem;margin:0 0 10px}
+.mgrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
+.mgrid .wd{font-size:.8rem;color:var(--muted);text-align:center;font-weight:700;padding-bottom:2px}
+.mcell{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:78px;padding:6px 7px;border:1px solid var(--line);border-radius:6px;
+  background:var(--surface);text-align:left;font-size:.85rem;position:relative;min-width:0}
+.mcell.blank{border:0;background:none}
+.mcell .dn{font-weight:700;font-size:.95rem;line-height:1.1}
+.mcell .dt{position:absolute;top:6px;right:7px;font-size:.7rem;font-weight:700}
+.mcell .dt.maroon{color:var(--maroon)} .mcell .dt.gold{color:var(--gold)}
+.mcell .cnt{font-size:1.25rem;font-weight:700;line-height:1.1;margin-top:auto}
+.mcell .cnt small{font-size:.75rem;font-weight:400;color:var(--muted);margin-left:3px}
+.mcell .gap{font-size:.75rem;font-weight:700;color:var(--maroon);white-space:nowrap}
+.mcell.l1{background:#FBF3DC} .mcell.l2{background:#F4E2B0} .mcell.l3{background:#EBCD7C}
+.mcell.off{background:repeating-linear-gradient(45deg,var(--bg) 0 6px,var(--surface) 6px 12px);color:var(--muted)}
+.mcell.off .cnt{font-size:.75rem;font-weight:400}
+.mcell.past{opacity:.85}
+.mcell.today{box-shadow:inset 0 0 0 2px var(--ink)}
+.mcell[aria-pressed="true"]{box-shadow:inset 0 0 0 3px var(--maroon)}
+.mcell.needs::after{content:"";position:absolute;bottom:7px;right:7px;width:10px;height:10px;border-radius:50%;background:var(--maroon)}
+.mlegend{display:flex;flex-wrap:wrap;gap:12px;font-size:.82rem;color:var(--muted);margin:10px 0 0}
+.mlegend span{display:inline-flex;align-items:center;gap:6px}
+.mlegend i{display:inline-block;width:16px;height:16px;border-radius:4px;border:1px solid var(--line)}
+@media (max-width:560px){ .mcell{min-height:62px;padding:5px} .mcell .cnt small,.mcell .gap{display:none} .mcell .dt{top:5px;right:5px} }
+.dayview{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-top:4px solid var(--gold);border-radius:6px;padding:14px 16px}
+.dayview h2{margin:0 0 4px}
+.dgroup{border-top:1px solid var(--line);padding:12px 0 6px}
+.dgroup:first-of-type{border-top:0}
+.dgroup .gh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline;margin-bottom:6px}
+.drow{display:grid;grid-template-columns:3.2em 1fr;gap:4px 10px;padding:6px 0;border-top:1px dashed var(--line)}
+.drow:first-of-type{border-top:0}
+.drow .pn{font-weight:700;color:var(--muted)}
+.drow.wide{grid-template-columns:5.5em 1fr}
+.drow .cov{grid-column:2;font-size:.92rem}
+.drow .cov .bk{color:var(--muted)}
+.dnone{color:var(--muted);font-size:.9rem;padding:4px 0}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);max-width:92%;background:var(--ink);color:var(--surface);
   padding:12px 18px;border-radius:8px;font-size:.95rem;display:none;z-index:9}
 #toast.err{background:var(--maroon)}
@@ -1253,6 +1291,28 @@ function adminEmailPayroll(month, dept) {
   return true;
 }
 
+/* ---------- Month calendar (admins) ---------- */
+
+// Every request in one month, past and future, grouped by date.
+// Chairs see their department's absences; masters see every department.
+function adminMonth(month) {
+  const st = state_();
+  const who = me_(st);
+  if (!who.admin) throw new Error('Only admins can see the month calendar.');
+  if (!/^\d{4}-\d{2}$/.test(month || '')) throw new Error('Pick a month.');
+  const cal = calendarMap_(), calendar = {};
+  Object.keys(cal).forEach(d => { if (d.indexOf(month) === 0) calendar[d] = cal[d]; });
+  const days = {};
+  st.slots
+    .filter(s => live_(s) && String(s.date).indexOf(month) === 0 && (who.master || deptOf_(st, s.requester) === who.me.dept))
+    .sort(bySlot_)
+    .forEach(s => {
+      const d = days[s.date] = days[s.date] || { date: s.date, day: s.day, slots: [] };
+      d.slots.push(slotView_(st, s, { requesterEmail: s.requester, signups: signupViews_(st, s) }));
+    });
+  return { month, today: today_(), calendar, days };
+}
+
 /* ---------- Daily reminders ---------- */
 
 function installDailyTrigger() {
@@ -1371,6 +1431,79 @@ var DEMO_SUBJECT_OVERRIDE={};
 var DEMO_OFFICE={name:'Dr. Hale',dept:'Principal’s Office'};
 DEMO_OWNER='hale@demo.school';
 function demoEmail(name){return name.toLowerCase().replace(/^dr\.\s*/,'').replace(/[^a-z]/g,'')+'@demo.school';}
+/* ===== Sample past coverage: every school day from the 1st of last month to yesterday =====
+   Written straight into the Slots and Signups tabs (the app won't take requests for past dates).
+   A fixed random seed keeps it the same every time the demo loads. */
+var DEMO_SUB_NOTES=[
+  'Take attendance. Students work on the practice set in the class folder.',
+  'Attendance, then the video and guided notes posted in the class folder.',
+  'Attendance, then students finish the worksheet from yesterday. No lab equipment out.',
+  'Quiz today: hand out from the folder on the desk, collect at the bell. Phones in the caddy.',
+  'Attendance, then the review packet. Students may work in pairs.',
+  'Attendance, then reading and questions in the class folder. Goggles stay on the shelf.',
+  'Students take the unit test. Copies and extra pencils are on the front table.'
+];
+function demoHistory(cal){
+  var seed=2026; var rnd=function(){seed=(seed*16807)%2147483647; return (seed-1)/2147483646;};
+  var pick=function(a){return a[Math.floor(rnd()*a.length)];};
+  var today=today_(), past=cal.filter(function(c){return c[0]<today&&c[1]!=='No school';});
+  if(!past.length) return;
+  var st=state_(), tally={};
+  var chair={Science:demoEmail('Cerullo'),Math:demoEmail('K. Okafor')};
+  var pool=function(dep){return st.teachers.filter(function(t){return t.dept===dep&&t.active&&!t.noSchedule&&t.email;});};
+  var depts={Science:pool('Science'),Math:pool('Math')};
+  var classes=function(t,day){return CONFIG.DAYS[day].filter(function(p){var c=t.cells[p];
+    return kind_(c)==='busy'&&!isHelpLab_(c)&&!CONFIG.IGNORE_CODES.test(c.code);});};
+  var stamp=function(date,back){var x=dateObj_(date); x.setDate(x.getDate()-back);
+    return fmtDate_(x)+' '+pad2_(7+Math.floor(rnd()*9))+':'+pad2_(Math.floor(rnd()*60));};
+  // Two heavy days (retreat, field trip) to show what a crunch looks like
+  var heavy={}; heavy[past[Math.floor(past.length*0.3)][0]]=3; heavy[past[Math.floor(past.length*0.7)][0]]=2;
+  var carry={}; // a few absences run two or three days (a conference)
+  var slotRows=[], signRows=[];
+  past.forEach(function(c){
+    var date=c[0], day=c[1], next={};
+    ['Science','Math'].forEach(function(dep){
+      var r=rnd(), n=dep==='Science'?(r<.2?0:r<.5?1:r<.78?2:r<.93?3:4):(r<.35?0:r<.72?1:r<.93?2:3);
+      if(dep==='Science'&&heavy[date]) n+=heavy[date];
+      var out=depts[dep].filter(function(t){return carry[t.email];});
+      var others=depts[dep].filter(function(t){return !carry[t.email]&&classes(t,day).length;});
+      while(out.length<n&&others.length) out.push(others.splice(Math.floor(rnd()*others.length),1)[0]);
+      out.forEach(function(t){
+        var ps=classes(t,day); if(!ps.length) return;
+        if(carry[t.email]>1) next[t.email]=carry[t.email]-1; else if(!carry[t.email]&&rnd()<.12) next[t.email]=1+Math.floor(rnd()*2);
+        var reqId=newId_(), created=stamp(date,2+Math.floor(rnd()*8)), notes=pick(DEMO_SUB_NOTES);
+        var byChair=rnd()<.1;
+        ps.forEach(function(p){
+          var s={id:newId_(),requestId:reqId,created:created,requester:t.email,date:date,day:day,period:p,cls:t.cells[p].code,room:t.cells[p].detail,
+            type:rnd()<.3?'Supervision':'Teaching',notes:notes,status:'Open',createdBy:byChair?chair[dep]:t.email,signups:[]};
+          s.fill=fillState_(s); st.slots.push(s); st.slotById[s.id]=s; slotRows.push(s);
+        });
+      });
+    });
+    carry=next;
+    // Fill the day's periods: most get covered, a few are split, some are assigned by the chair
+    st.slots.filter(function(s){return s.date===date;}).sort(function(){return rnd()-.5;}).forEach(function(s){
+      if(rnd()<.04) return; // never picked up in the tracker
+      var dep=deptOf_(st,s.requester), cands=candidates_(st,s,tally,false), cross=false;
+      if(!cands.length){cands=candidates_(st,s,tally,true); cross=true;}
+      if(!cands.length) return;
+      var top=cands.slice(0,3), add=function(c,kind,assigned){
+        var t=teacherBy_(st,c.email), snap=kind==='Backup'?{}:snapshot_(st,t,s);
+        var g=Object.assign({id:newId_(),slotId:s.id,email:c.email,kind:kind,created:stamp(date,Math.floor(rnd()*3)),status:'Active',assignedBy:assigned&&c.email!==chair[dep]?chair[dep]:''},snap);
+        s.signups.push(g); s.fill=fillState_(s); signRows.push(g);
+        if(kind!=='Backup'){var x=tally[c.email]=tally[c.email]||{teaching:0,supervision:0}; x[s.type==='Supervision'?'supervision':'teaching']+=kind==='Full'?1:.5;}
+      };
+      var first=pick(top), assigned=cross||rnd()<.12;
+      if(top.length>1&&rnd()<.15){
+        add(first,'First half',assigned);
+        var rest=candidates_(st,s,tally,cross); if(rest.length) add(pick(rest.slice(0,3)),'Second half',assigned);
+      } else add(first,'Full',assigned);
+      if(rnd()<.1){var b=candidates_(st,s,tally,false); if(b.length) add(pick(b),'Backup',false);}
+    });
+  });
+  slotRows.forEach(function(s){appendRow_(TABLES.slots,s);});
+  signRows.forEach(function(g){appendRow_(TABLES.signups,g);});
+}
 function demoSeed(){
   DEMO_SS.sheets={}; DEMO_MAIL.length=0; SETTINGS_=null; for(var k in DEMO_PROPS) delete DEMO_PROPS[k];
   var cols=[2,3,4,5,6,8,9,10,11,12];
@@ -1388,12 +1521,20 @@ function demoSeed(){
       active:DEMO_INACTIVE[t.name]?'No':'Yes',role:DEMO_ROLES[t.name]||'',dept:t.dept});
   });
   appendRow_(TABLES.roster,{num:99,name:DEMO_OFFICE.name,email:demoEmail(DEMO_OFFICE.name),subject:'',active:'Yes',role:'Master',dept:DEMO_OFFICE.dept});
-  // Calendar: alternating weekdays from 30 days ago to 60 days ahead
-  var day='Maroon', d=new Date(); d.setDate(d.getDate()-30); d.setHours(12);
-  var cal=[];
-  for(var i=0;i<90;i++){var wd=d.getDay(); if(wd>0&&wd<6){cal.push([fmtDate_(d),day]); day=day==='Maroon'?'Gold':'Maroon';} d.setDate(d.getDate()+1);}
+  // Calendar: alternating weekdays from the 1st of last month to 60 days ahead.
+  // The second Monday of last month is a day off, like a fall holiday.
+  var day='Maroon', d=new Date(); d.setHours(12); d.setDate(1); d.setMonth(d.getMonth()-1);
+  var end=new Date(); end.setDate(end.getDate()+60);
+  var cal=[], mondays=0, lastMonth=d.getMonth();
+  while(d<=end){var wd=d.getDay();
+    if(wd>0&&wd<6){
+      if(wd===1&&d.getMonth()===lastMonth&&++mondays===2) cal.push([fmtDate_(d),'No school']);
+      else {cal.push([fmtDate_(d),day]); day=day==='Maroon'?'Gold':'Maroon';}
+    }
+    d.setDate(d.getDate()+1);}
   cal.forEach(function(c){appendRow_(TABLES.calendar,{date:c[0],day:c[1]});});
-  var today=today_(), future=cal.filter(function(c){return c[0]>today;});
+  demoHistory(cal);
+  var today=today_(), future=cal.filter(function(c){return c[0]>today&&c[1]!=='No school';});
   var nextGold=future.filter(function(c){return c[1]==='Gold';}), nextMaroon=future.filter(function(c){return c[1]==='Maroon';});
   var as=function(n){DEMO_USER=demoEmail(n);};
   var periodsFor=function(n,dayType){var t=readSchedule_().find(function(x){return x.name===n;});
@@ -1421,7 +1562,7 @@ var google={script:{}};
 Object.defineProperty(google.script,'run',{get:function(){
   var ok=function(){}, fail=function(){};
   var r={withSuccessHandler:function(f){ok=f;return r;},withFailureHandler:function(f){fail=f;return r;}};
-  ['getAppData','createRequest','signUp','cancelSignup','cancelSlot','assignBackup','adminAssign','nudge','adminPayroll','adminEmailPayroll','adminPostAnnouncement','adminRemoveAnnouncement'].forEach(function(n){
+  ['getAppData','createRequest','signUp','cancelSignup','cancelSlot','assignBackup','adminAssign','nudge','adminPayroll','adminEmailPayroll','adminMonth','adminPostAnnouncement','adminRemoveAnnouncement'].forEach(function(n){
     r[n]=function(){var a=arguments; setTimeout(function(){
       try{ SETTINGS_=null; var out=window[n].apply(null,a); ok(JSON.parse(JSON.stringify(out))); }catch(e){ fail(e); }
       if(window.demoAfterCall) demoAfterCall();
@@ -1433,6 +1574,7 @@ Object.defineProperty(google.script,'run',{get:function(){
 </script>
 <script>
 
+let MONTH='', MDATA=null, MDAY='', MSORT='teacher';
 let D=null, TAB='home', REPORT=null, REPORT_MONTH='', OPENVIEW='list', DAYFILTER='', VIEWDEPT='All', CLAIM=null;
 let ANN={message:'',level:'Normal',until:'',email:false,dept:'All'};
 const newDay=()=>({date:'',day:'',sel:{}});
@@ -1516,7 +1658,7 @@ function signupList(s,admin){
 
 function renderNav(){
   const tabs=[['home','Home',D.requests.filter(s=>!s.fill.filled).length],['open','Periods Needing a Sub',D.open.filter(s=>!s.mine.length).length],['request','Request Sub Coverage',0]];
-  if(D.admin) tabs.push(['admin','Admin',D.admin.needs.length]);
+  if(D.admin) tabs.push(['month','Calendar',0],['admin','Admin',D.admin.needs.length]);
   document.getElementById('nav').innerHTML=tabs.map(([k,l,n])=>
     `<button data-a="tab" data-id="${k}" aria-current="${TAB===k&&!CLAIM}">${l}${n?`<span class="badge">${n}</span>`:''}</button>`).join('');
 }
@@ -1724,6 +1866,86 @@ function viewAdmin(){
   return h;
 }
 
+/* ---------- Month calendar (admins) ---------- */
+const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function shiftMonth(m,n){const [y,mo]=m.split('-').map(Number), d=new Date(y,mo-1+n,1); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);}
+function coverText(s,past){
+  const g=s.signups.filter(x=>x.kind!=='Backup'), bk=s.signups.filter(x=>x.kind==='Backup');
+  const nm=x=>esc(x.name)+(x.assigned?' (assigned)':'')+(D.me.master&&x.dept&&x.dept!==s.dept?' ('+esc(x.dept)+')':'');
+  const full=g.find(x=>x.kind==='Full'), a=g.find(x=>x.kind==='First half'), b=g.find(x=>x.kind==='Second half');
+  let t;
+  if(full) t=`<span class="ok">Covered</span> by ${nm(full)}`;
+  else if(a||b) t=`<span class="${a&&b?'ok':'needs'}">${a&&b?'Split':'Half covered'}</span>: 1st half ${a?nm(a):'<b>open</b>'}, 2nd half ${b?nm(b):'<b>open</b>'}`;
+  else t=`<span class="needs">${past?'Not covered in the tracker':'Needs a sub'}</span>`;
+  return t+(bk.length&&!s.fill.filled?` <span class="bk">· backup: ${bk.map(nm).join(', ')}</span>`:'');
+}
+function monthDay(date){
+  const d=MDATA.days[date]; const slots=d?d.slots.filter(s=>inView(s.dept)):[];
+  return {date, day:MDATA.calendar[date]||(d&&d.day)||'', slots,
+    people:slots.map(s=>s.requesterEmail).filter((e,i,a)=>a.indexOf(e)===i).length,
+    open:slots.filter(s=>!s.fill.filled).length};
+}
+function viewMonth(){
+  if(!MONTH) MONTH=D.today.slice(0,7);
+  let h='';
+  if(D.me.master) h+=`<div class="field"><label for="vdept">Department</label><select id="vdept" data-f="vdept"><option value="All">All departments</option>${D.admin.depts.map(x=>`<option ${VIEWDEPT===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>`;
+  const [y,mo]=MONTH.split('-').map(Number);
+  h+=`<div class="monthbar">${btn('‹ Prev','mshift','-1','','small')}<h2>${MONTHS[mo-1]} ${y}</h2>${btn('Next ›','mshift','1','','small')}</div>`;
+  if(!MDATA||MDATA.month!==MONTH){
+    if(!viewMonth.busy){viewMonth.busy=1; call('adminMonth',MONTH).then(r=>{viewMonth.busy=0;MDATA=r;if(TAB==='month')render();}).catch(()=>{viewMonth.busy=0;});}
+    return h+`<p class="hint">Loading the month…</p>`;
+  }
+  const today=MDATA.today, cells=[], last=new Date(y,mo,0).getDate();
+  let tot={people:0,periods:0,open:0,openPast:0};
+  for(let n=1;n<=last;n++){
+    const dt=new Date(y,mo-1,n), wd=dt.getDay(); if(wd===0||wd===6) continue;
+    const date=MONTH+'-'+('0'+n).slice(-2), m=monthDay(date);
+    if(!cells.length) for(let k=1;k<wd;k++) cells.push('<div class="mcell blank" aria-hidden="true"></div>');
+    tot.people+=m.people; tot.periods+=m.slots.length; if(date<today) tot.openPast+=m.open; else tot.open+=m.open;
+    if(m.day==='No school'&&!m.slots.length){cells.push(`<div class="mcell off"><span class="dn">${n}</span><span class="cnt">No school</span></div>`);continue;}
+    const lvl=m.people>=4?'l3':m.people>=2?'l2':m.people?'l1':'';
+    const label=`${fmtDate(date)}${m.day?', '+m.day:''}: ${m.people?plural(m.people,'teacher')+' out, '+plural(m.slots.length,'period'):'no absences'}${m.open?', '+m.open+(date<today?' not covered':' still need a sub'):''}`;
+    cells.push(`<button class="mcell ${lvl} ${date<today?'past':''} ${date===today?'today':''} ${m.open&&date>=today?'needs':''}" data-a="mday" data-id="${date}" aria-pressed="${MDAY===date}" aria-label="${esc(label)}">
+      <span class="dn">${n}</span>${m.day==='Maroon'||m.day==='Gold'?`<span class="dt ${m.day.toLowerCase()}">${m.day[0]}</span>`:''}
+      ${m.people?`<span class="cnt">${m.people}<small>out</small></span>`:''}${m.open?`<span class="gap">${m.open} ${date<today?'uncovered':'open'}</span>`:''}</button>`);
+  }
+  h+=`<p class="msum">${tot.people?`${plural(tot.people,'teacher absence')}, ${plural(tot.periods,'period')} to cover.`+
+      (tot.open?` <b class="needs">${tot.open} still ${tot.open===1?'needs':'need'} a sub.</b>`:'')+(tot.openPast?` ${tot.openPast} past ${tot.openPast===1?'period was':'periods were'} not covered in the tracker.`:'')
+      :'No planned absences this month.'} Tap a day for details.</p>`;
+  h+=`<div class="mgrid">${['Mon','Tue','Wed','Thu','Fri'].map(x=>`<div class="wd">${x}</div>`).join('')}${cells.join('')}</div>
+    <div class="mlegend"><span><i style="background:#FBF3DC"></i>1 out</span><span><i style="background:#F4E2B0"></i>2–3 out</span><span><i style="background:#EBCD7C"></i>4+ out</span>
+      <span><i style="border-radius:50%;background:var(--maroon);border-color:var(--maroon);width:10px;height:10px"></i>Still needs a sub</span><span>M / G = Maroon / Gold day</span></div>`;
+  if(MDAY&&MDAY.indexOf(MONTH)===0) h+=dayDetail(monthDay(MDAY));
+  return h;
+}
+function dayDetail(m){
+  const past=m.date<MDATA.today, covered=m.slots.length-m.open;
+  let h=`<section class="dayview" id="dayview"><h2>${fmtDate(m.date)}${m.day==='Maroon'||m.day==='Gold'?`<span class="day ${m.day.toLowerCase()}">${m.day}</span>`:''}</h2>`;
+  if(!m.slots.length) return h+`<p class="hint" style="margin:0">No planned absences${m.day==='No school'?' (no school)':''}.</p></section>`;
+  h+=`<p class="hint">${plural(m.people,'teacher')} out · ${plural(m.slots.length,'period')} · ${covered} covered${m.open?` · <b class="needs">${m.open} ${past?'not covered':'still '+(m.open===1?'needs':'need')+' a sub'}</b>`:''}</p>
+    <div class="actions" style="margin:0 0 6px"><div class="seg">${[['teacher','By teacher'],['period','By period']].map(([k,l])=>`<button data-a="msort" data-id="${k}" aria-pressed="${MSORT===k}">${l}</button>`).join('')}</div>
+    ${m.open&&!past?btn('Assign in Admin','tab','admin','','small'):''}</div>`;
+  if(MSORT==='teacher'){
+    const by={};
+    m.slots.forEach(s=>{(by[s.requesterEmail]=by[s.requesterEmail]||{name:s.requester,subject:s.requesterSubject,dept:s.dept,slots:[]}).slots.push(s);});
+    h+=Object.keys(by).map(k=>by[k]).sort((a,b)=>a.name.localeCompare(b.name)).map(t=>{
+      const open=t.slots.filter(s=>!s.fill.filled).length;
+      return `<div class="dgroup"><div class="gh"><b>${esc(t.name)}${t.subject?` <span class="meta">(${esc(t.subject)})</span>`:''}</b>${deptTag(t.dept)}
+        <span class="${open?'needs':'ok'}">${open?open+' open':'All covered'}</span></div>
+        ${t.slots.map(s=>`<div class="drow"><span class="pn">P${s.period}</span><span>${where(s.cls,s.room)}, ${esc(s.type.toLowerCase())}</span><span class="cov">${coverText(s,past)}</span></div>`).join('')}</div>`;
+    }).join('');
+  } else {
+    const ps=m.day==='Maroon'?[1,2,3,4,5]:m.day==='Gold'?[6,7,8,9,10]:m.slots.map(s=>s.period).filter((p,i,a)=>a.indexOf(p)===i);
+    h+=ps.map(p=>{
+      const list=m.slots.filter(s=>s.period===p).sort((a,b)=>a.requester.localeCompare(b.requester)), open=list.filter(s=>!s.fill.filled).length;
+      return `<div class="dgroup"><div class="gh"><b>Period ${p}</b>${list.length?`<span class="${open?'needs':'ok'}">${list.length===1?'1 class':list.length+' classes'}${open?', '+open+' open':', all covered'}</span>`:''}</div>
+        ${list.length?list.map(s=>`<div class="drow wide"><span class="pn">${esc(s.cls||'')}</span><span>${s.room?(/\d/.test(s.room)?'Room '+esc(s.room):esc(s.room))+', ':''}${esc(s.type.toLowerCase())}, for ${esc(s.requester)}${D.me.master&&VIEWDEPT==='All'&&s.dept?' ('+esc(s.dept)+')':''}</span><span class="cov">${coverText(s,past)}</span></div>`).join('')
+          :`<div class="dnone">Nothing to cover.</div>`}</div>`;
+    }).join('');
+  }
+  return h+`</section>`;
+}
+
 // Opened from a button in an email: confirm before signing up (email scanners sometimes "click" links)
 function viewClaim(){
   const c=CLAIM, s=D.open.find(x=>x.id===c.slot);
@@ -1747,10 +1969,10 @@ function render(){
     document.getElementById('view').innerHTML=`<div class="empty">Your account (${esc(D.email||'unknown')}) isn’t on the roster yet. Ask whoever manages the tracker to add your school email to the Roster tab.</div>`;
     return;
   }
-  if(TAB==='admin'&&!D.admin) TAB='home';
+  if((TAB==='admin'||TAB==='month')&&!D.admin) TAB='home';
   document.getElementById('who').textContent=D.me.name+(D.me.dept?', '+D.me.dept:'')+(D.me.master?' (master)':D.me.admin?' (admin)':'');
   renderNav();
-  document.getElementById('view').innerHTML=CLAIM?viewClaim():({home:viewHome,open:viewOpen,request:viewRequest,admin:viewAdmin}[TAB]||viewHome)();
+  document.getElementById('view').innerHTML=CLAIM?viewClaim():({home:viewHome,open:viewOpen,request:viewRequest,month:viewMonth,admin:viewAdmin}[TAB]||viewHome)();
 }
 function load(){call('getAppData').then(d=>{D=d;render();});}
 // Email buttons open the app with ?claim=<id>&kind=<kind>
@@ -1766,7 +1988,10 @@ document.addEventListener('click',e=>{
   const el=e.target.closest('[data-a]'); if(!el) return;
   const a=el.dataset.a, id=el.dataset.id, arg=el.dataset.arg;
   const set=d=>{D=d;render();};
-  if(a==='tab'){TAB=id;DAYFILTER='';CLAIM=null;render();window.scrollTo(0,0);}
+  if(a==='tab'){TAB=id;DAYFILTER='';CLAIM=null;if(id==='month')MDATA=null;render();window.scrollTo(0,0);}
+  else if(a==='mshift'){MONTH=shiftMonth(MONTH,Number(id));MDATA=null;MDAY='';render();}
+  else if(a==='mday'){MDAY=MDAY===id?'':id;render();const v=document.getElementById('dayview');if(v&&MDAY)v.scrollIntoView({behavior:'smooth',block:'start'});}
+  else if(a==='msort'){MSORT=id;render();}
   else if(a==='claimgo'){call('signUp',id,arg).then(d=>{CLAIM=null;TAB='home';set(d);window.scrollTo(0,0);toast(arg==='Backup'?'You’re a backup for this period. Thanks!':'You’re signed up. Thanks!');}).catch(()=>{});}
   else if(a==='claimdone'){CLAIM=null;TAB=id||'home';render();window.scrollTo(0,0);}
   else if(a==='signup'){call('signUp',id,arg).then(d=>{set(d);toast(arg==='Backup'?'You’re a backup for this period.':'Signed up. Thanks!');});}
