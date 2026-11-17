@@ -120,6 +120,16 @@ textarea{min-height:70px;resize:vertical}
 .inline{display:flex;align-items:center;gap:10px;font-weight:400}
 .inline input{width:22px;height:22px}
 
+/* Home: the two main tasks */
+.bigbtns{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:4px 0 8px}
+@media (max-width:560px){.bigbtns{grid-template-columns:1fr}}
+.big{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:18px;min-height:96px;border:1.5px solid var(--maroon);border-radius:10px;background:var(--surface)}
+.big b{font-size:1.15rem;color:var(--maroon)}
+.big span{color:var(--muted);font-size:.92rem}
+details.myday{margin-top:8px}
+details.myday summary{font-size:.9rem;padding:4px 0}
+details.manage summary{font-size:.95rem}
+
 /* Home: announcements + who's out */
 .ann{background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--gold);border-radius:6px;padding:12px 16px;margin-bottom:10px}
 .ann.urgent{border-color:var(--maroon);border-left-width:5px;background:var(--maroon-soft)}
@@ -179,6 +189,7 @@ tr.me td{background:var(--gold-soft);font-weight:700}
 <div class="demobar"><div class="in">
   <b>Demo</b><label for="as" class="grow" style="font-size:.9rem">Viewing as
   <select id="as"></select></label>
+  <button id="digestbtn">Send today’s digest</button>
   <button id="mailbtn">Emails sent (<span id="mailn">0</span>)</button>
   <button id="resetbtn" class="quiet">Reset demo</button>
 </div></div>
@@ -186,7 +197,7 @@ tr.me td{background:var(--gold-soft);font-weight:700}
   <div class="top"><h1>Sub Coverage</h1><div id="who"></div></div>
   <nav id="nav"></nav>
 </header>
-<p class="intro">A demo school with two departments. Science uses the real schedule with disguised names; Math is made up. Switch who you’re viewing as to see a teacher, a department chair, or the principal’s office. The absences and sign-ups are made up, and nothing here sends real email.</p>
+<p class="intro">A demo school with two departments. Science uses the real schedule with disguised names; Math is made up. Switch who you’re viewing as to see a teacher, a department chair, or the principal’s office. Nothing here sends real email: Emails sent shows what would have gone out, and Send today’s digest shows everyone’s morning email.</p>
 <main id="view"><p class="hint">Loading…</p></main>
 <footer>Created by M. Lucki, Science Department. Built with Claude. AMDG</footer>
 <div class="mailpanel" id="mailpanel"><div class="mailbox"><div class="mailhead"><b>Emails the app would have sent</b><button id="mailclose">Close</button></div><div id="maillist"></div></div></div>
@@ -227,15 +238,17 @@ var Utilities={
 };
 var MailApp={sendEmail:function(o){DEMO_MAIL.unshift({to:o.to,subject:o.subject,html:o.htmlBody,from:o.name,replyTo:o.replyTo||'',at:new Date()});}};
 var ScriptApp={getService:function(){return{getUrl:function(){return '#';}};}};
+var DEMO_PROPS={};
+var PropertiesService={getScriptProperties:function(){return{getProperty:function(k){return DEMO_PROPS[k]||null;},setProperty:function(k,v){DEMO_PROPS[k]=v;}};}};
 var LockService={getScriptLock:function(){return{waitLock:function(){},releaseLock:function(){}};}};
 
 /** @OnlyCurrentDoc */
-// Science Sub Coverage Tracker, created by M. Lucki (built with Claude)
+// Sub Coverage Tracker, created by M. Lucki (built with Claude)
 /**
  * Google Apps Script, bound to a Google Sheet. See SETUP.md and TESTING.md.
  *
  * Tabs you edit:   Schedule tabs (pasted, one per department: "Schedule - Science"), Roster, Calendar, Settings
- * Tabs the app writes: Slots, Signups, Announcements, Payroll YYYY-MM (reports)
+ * Tabs the app writes: Slots, Signups, Announcements, Outbox (emails waiting for the digest), Payroll YYYY-MM (reports)
  */
 
 const CONFIG = {
@@ -273,8 +286,8 @@ const CONFIG = {
 const TABLES = {
   roster: {
     name: 'Roster', text: true,
-    headers: ['Teacher #', 'Name', 'Email', 'Subject', 'Maroon Lunch', 'Gold Lunch', 'Active', 'Role', 'Department'],
-    keys: ['num', 'name', 'email', 'subject', 'lunchMaroon', 'lunchGold', 'active', 'role', 'dept']
+    headers: ['Teacher #', 'Name', 'Email', 'Subject', 'Maroon Lunch', 'Gold Lunch', 'Active', 'Role', 'Department', 'Emails'],
+    keys: ['num', 'name', 'email', 'subject', 'lunchMaroon', 'lunchGold', 'active', 'role', 'dept', 'emailPref']
   },
   slots: {
     name: 'Slots', text: true,
@@ -291,6 +304,11 @@ const TABLES = {
     headers: ['ID', 'Created', 'Posted By', 'Message', 'Level', 'Show Until', 'Status', 'Department'],
     keys: ['id', 'created', 'by', 'message', 'level', 'until', 'status', 'dept']
   },
+  outbox: {
+    name: 'Outbox', text: true,
+    headers: ['ID', 'Created', 'To', 'Subject', 'Lines', 'Intro', 'Status'],
+    keys: ['id', 'created', 'to', 'subject', 'lines', 'intro', 'status']
+  },
   calendar: { name: 'Calendar', headers: ['Date', 'Day'], keys: ['date', 'day'] },
   settings: { name: 'Settings', headers: ['Setting', 'Value', 'Notes'], keys: ['key', 'value', 'notes'] }
 };
@@ -300,7 +318,9 @@ const DEFAULT_SETTINGS = [
   ['Reply-to email', '', 'Replies to tracker emails go here (for example the department chair). Blank = whoever deployed it.'],
   ['Reminder days before', '2', 'Requesters and admins get a morning email about uncovered periods this many days out'],
   ['Count covers since', '', 'Tally and thanks board only count covers on or after this date. Change it each semester.'],
-  ['Thanks board size', '5', 'How many names each thanks list shows']
+  ['Thanks board size', '5', 'How many names each thanks list shows'],
+  ['Email delivery', 'Daily digest', '"Daily digest" bundles most emails into one or two a day. "Instant" sends each one right away. Anything about today or the next school day always goes out instantly. Anyone can be switched with the Roster’s Emails column.'],
+  ['Digest hours', '6', 'When the digest goes out, as hours on a 24-hour clock: "6" is about 6 AM, "6, 15" is 6 AM and 3 PM. Rerun Turn on daily emails after changing this.']
 ];
 
 const KINDS = { FULL: 'Full', FIRST: 'First half', SECOND: 'Second half', BACKUP: 'Backup' };
@@ -311,7 +331,7 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('Sub Tracker')
     .addItem('Set up / refresh roster from Schedule', 'setupTracker')
     .addItem('Fill calendar with Maroon/Gold days', 'fillCalendar')
-    .addItem('Turn on daily reminder emails', 'installDailyTrigger')
+    .addItem('Turn on daily emails', 'installDailyTrigger')
     .addToUi();
 }
 
@@ -399,7 +419,9 @@ function settings_() {
     replyTo: String(s['Reply-to email'] || '').trim(),
     remindDays: Number(s['Reminder days before']) || 2,
     since: normDate_(s['Count covers since']),
-    boardSize: Number(s['Thanks board size']) || 5
+    boardSize: Number(s['Thanks board size']) || 5,
+    emailMode: /instant/i.test(s['Email delivery'] || '') ? 'instant' : 'digest',
+    digestHours: String(s['Digest hours'] || '6').split(/[^0-9]+/).filter(x => x !== '').map(Number).filter(h => h >= 0 && h < 24)
   };
   return SETTINGS_;
 }
@@ -521,14 +543,14 @@ function setupTracker() {
     const g = guessSubjects_(t);
     g.unknown.forEach(c => { if (unknownCodes.indexOf(c) < 0) unknownCodes.push(c); });
     return [t.num, t.name, o.email || '', o.subject || g.subjects, o.lunchMaroon || guessLunch_(t, 'Maroon'),
-      o.lunchGold || guessLunch_(t, 'Gold'), o.active || 'Yes', o.role || '', t.dept].map(String);
+      o.lunchGold || guessLunch_(t, 'Gold'), o.active || 'Yes', o.role || '', t.dept, o.emailPref || ''].map(String);
   });
   // Keep people you added by hand who aren't on a schedule (for example the principal's office)
   let n = rows.length;
   Object.keys(old).forEach(k => {
     const o = old[k];
     if (used[k] || !o.email) return;
-    rows.push([++n, o.name, o.email, o.subject, o.lunchMaroon, o.lunchGold, o.active || 'Yes', o.role, o.dept].map(String));
+    rows.push([++n, o.name, o.email, o.subject, o.lunchMaroon, o.lunchGold, o.active || 'Yes', o.role, o.dept, o.emailPref].map(String));
   });
   const sh = table_(TABLES.roster);
   if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, TABLES.roster.keys.length).clearContent();
@@ -584,7 +606,7 @@ function teachers_() {
       Maroon: Number(r.lunchMaroon || (t ? guessLunch_(t, 'Maroon') : 0)) || 0,
       Gold: Number(r.lunchGold || (t ? guessLunch_(t, 'Gold') : 0)) || 0
     },
-    active: !/^(no|n|false|0)$/i.test(r.active || 'Yes'), role: r.role || '',
+    active: !/^(no|n|false|0)$/i.test(r.active || 'Yes'), role: r.role || '', emailPref: r.emailPref || '',
     cells: t ? t.cells : {}, noSchedule: !t
   });
   const list = readSchedule_().map(t => {
@@ -749,15 +771,63 @@ function slotLine_(st, s) {
 
 function mail_(to, subject, lines, intro) {
   if (!to) return;
+  sendHtml_(to, subject, (intro ? '<p>' + esc_(intro) + '</p>' : '') + '<ul>' + lines.map(l => '<li>' + esc_(l) + '</li>').join('') + '</ul>');
+}
+
+// Every email ends with a link to the app
+function sendHtml_(to, subject, html) {
   const cfg = settings_();
-  const url = ScriptApp.getService().getUrl();
-  const opts = {
-    to, subject, name: cfg.senderName,
-    htmlBody: (intro ? '<p>' + esc_(intro) + '</p>' : '') + '<ul>' + lines.map(l => '<li>' + esc_(l) + '</li>').join('') +
-      '</ul><p><a href="' + url + '">Open the sub coverage tracker</a></p>'
-  };
+  const opts = { to, subject, name: cfg.senderName,
+    htmlBody: '<div style="font-family:Arial,sans-serif;font-size:15px;color:#1D2433">' + html +
+      '<p><a href="' + ScriptApp.getService().getUrl() + '" style="color:#7A1F2E">Open the sub coverage tracker</a></p></div>' };
   if (cfg.replyTo) opts.replyTo = cfg.replyTo;
   MailApp.sendEmail(opts);
+}
+
+// Does this person get emails right away? (Roster "Emails" column wins over the Settings default)
+function wantsInstant_(st, email) {
+  const t = teacherBy_(st, email), pref = (t && t.emailPref) || '';
+  if (/instant/i.test(pref)) return true;
+  if (/digest|daily/i.test(pref)) return false;
+  return settings_().emailMode === 'instant';
+}
+
+// Today or the next school day: too soon to wait for the digest
+function isSoon_(date) {
+  const tomorrow = fmtDate_(new Date(Date.now() + 864e5));
+  return date <= schoolDayFrom_(calendarMap_(), tomorrow);
+}
+
+// Send now if urgent or the person wants instant emails; otherwise hold it for their next digest
+function notify_(st, to, subject, lines, intro, urgent) {
+  if (!to) return;
+  if (urgent || wantsInstant_(st, to)) { mail_(to, subject, lines, intro); return; }
+  appendRow_(TABLES.outbox, { id: newId_(), created: nowStr_(), to, subject, lines: JSON.stringify(lines), intro: intro || '', status: 'Queued' });
+}
+
+// One-tap buttons for an open period. Each opens a confirmation screen in the app; nothing happens until they confirm.
+function claimButtons_(s) {
+  const url = ScriptApp.getService().getUrl(), f = s.fill || {};
+  const b = (label, kind, main) => '<a href="' + url + '?claim=' + encodeURIComponent(s.id) + '&kind=' + encodeURIComponent(kind) +
+    '" style="display:inline-block;margin:4px 6px 4px 0;padding:8px 14px;border-radius:6px;text-decoration:none;font-weight:bold;' +
+    (main ? 'background:#7A1F2E;color:#ffffff' : 'border:1px solid #7A1F2E;color:#7A1F2E') + '">' + label + '</a>';
+  const out = [];
+  if (!f.filled) {
+    if (!f.first && !f.second) out.push(b('Cover full period', KINDS.FULL, true));
+    if (!f.first) out.push(b('First half', KINDS.FIRST));
+    if (!f.second) out.push(b('Second half', KINDS.SECOND));
+  }
+  out.push(b('Be a backup', KINDS.BACKUP));
+  return out.join('');
+}
+
+function slotBlock_(st, s, isNew) {
+  return '<div style="margin:12px 0;padding:10px 12px;border:1px solid #DCE0E7;border-left:4px solid #7A1F2E;border-radius:6px">' +
+    (isNew ? '<span style="font-size:12px;font-weight:bold;color:#7A1F2E">NEW </span>' : '') +
+    '<b>' + esc_(niceDate_(s.date) + ', period ' + s.period) + '</b> (' + esc_(s.day) + ' day)<br>' +
+    esc_(where_(s.cls, s.room) + ', ' + String(s.type).toLowerCase() + ', for ' + nameOf_(st, s.requester)) +
+    (s.notes ? '<br><span style="color:#5B6475">' + esc_(s.notes) + '</span>' : '') +
+    '<div>' + claimButtons_(s) + '</div></div>';
 }
 
 function candidates_(st, s, tally, anyDept) {
@@ -946,15 +1016,16 @@ function createRequest(req) {
     });
     SpreadsheetApp.flush();
     if (target.email !== who.email) {
-      mail_(target.email, 'Coverage requested for you', planned.map(x => niceDate_(x.date) + ', ' + x.day + ' day, period ' + x.p + ' (' + x.type.toLowerCase() + ')'),
-        who.me.name + ' posted a coverage request for you:');
+      notify_(st, target.email, 'Coverage requested for you', planned.map(x => niceDate_(x.date) + ', ' + x.day + ' day, period ' + x.p + ' (' + x.type.toLowerCase() + ')'),
+        who.me.name + ' posted a coverage request for you:', planned.some(x => isSoon_(x.date)));
     }
-    const sent = req.notify ? notifyCandidates_(ids) : 0;
-    return { data: getAppData(), sent };
+    const n = req.notify ? notifyCandidates_(ids) : { sent: 0, queued: 0 };
+    return { data: getAppData(), sent: n.sent, queued: n.queued };
   });
 }
 
-function notifyCandidates_(slotIds) {
+// force: email everyone now (the "Email free colleagues" button). Returns { sent, queued }.
+function notifyCandidates_(slotIds, force) {
   const st = state_();
   const per = {};
   slotIds.forEach(id => {
@@ -965,12 +1036,16 @@ function notifyCandidates_(slotIds) {
       if (availability_(st, t, s)) (per[t.email] = per[t.email] || []).push(s);
     });
   });
+  let sent = 0, queued = 0;
   Object.keys(per).forEach(e => {
-    const list = per[e];
-    mail_(e, 'Coverage needed: ' + nameOf_(st, list[0].requester) + ', ' + niceDate_(list[0].date),
-      list.map(s => slotLine_(st, s)), 'Your schedule shows you’re free for:');
+    const now = (force || wantsInstant_(st, e)) ? per[e] : per[e].filter(s => isSoon_(s.date));
+    if (now.length < per[e].length) queued++;   // the rest show up as NEW in their next digest
+    if (!now.length) return;
+    sendHtml_(e, 'Coverage needed: ' + nameOf_(st, now[0].requester) + ', ' + niceDate_(now[0].date),
+      '<p>Your schedule shows you’re free for ' + (now.length > 1 ? 'these periods' : 'this period') + ':</p>' + now.map(s => slotBlock_(st, s, false)).join(''));
+    sent++;
   });
-  return Object.keys(per).length;
+  return { sent, queued };
 }
 
 function signUp(slotId, kind) {
@@ -992,7 +1067,7 @@ function signUp(slotId, kind) {
     }
     const snap = kind === KINDS.BACKUP ? {} : snapshot_(st, me, s);
     appendRow_(TABLES.signups, Object.assign({ id: newId_(), slotId, email, kind, created: nowStr_(), status: 'Active', assignedBy: '' }, snap));
-    mail_(s.requester, me.name + ' signed up (' + kind.toLowerCase() + ')', [slotLine_(st, s)]);
+    notify_(st, s.requester, me.name + ' signed up (' + kind.toLowerCase() + ')', [slotLine_(st, s)], '', isSoon_(s.date));
     return getAppData();
   });
 }
@@ -1006,10 +1081,10 @@ function cancelSignup(signupId) {
     if (!g || (g.email !== who.email && !(s && canManage_(st, who, s.requester)))) throw new Error('Couldn’t find that sign-up.');
     setCells_(TABLES.signups, g._row, { status: 'Cancelled' });
     if (s && live_(s)) {
-      if (g.email !== who.email) mail_(g.email, 'You’re no longer covering', [slotLine_(st, s)], who.me.name + ' removed you from this period:');
+      if (g.email !== who.email) notify_(st, g.email, 'You’re no longer covering', [slotLine_(st, s)], who.me.name + ' removed you from this period:', isSoon_(s.date));
       if (s.requester !== who.email) {
-        mail_(s.requester, nameOf_(st, g.email) + ' is no longer covering (' + g.kind.toLowerCase() + ')', [slotLine_(st, s)],
-          'Open the tracker to see who else is free, or use a backup.');
+        notify_(st, s.requester, nameOf_(st, g.email) + ' is no longer covering (' + g.kind.toLowerCase() + ')', [slotLine_(st, s)],
+          'Open the tracker to see who else is free, or use a backup.', isSoon_(s.date));
       }
     }
     return getAppData();
@@ -1023,8 +1098,8 @@ function cancelSlot(slotId) {
     const s = st.slotById[slotId];
     if (!s || (s.requester !== who.email && !canManage_(st, who, s.requester))) throw new Error('Couldn’t find that request.');
     setCells_(TABLES.slots, s._row, { status: 'Cancelled' });
-    s.signups.forEach(g => mail_(g.email, 'Coverage no longer needed', [slotLine_(st, s)], 'Thanks for signing up. This one was cancelled.'));
-    if (s.requester !== who.email) mail_(s.requester, 'Your coverage request was cancelled', [slotLine_(st, s)], who.me.name + ' cancelled this request:');
+    s.signups.forEach(g => notify_(st, g.email, 'Coverage no longer needed', [slotLine_(st, s)], 'Thanks for signing up. This one was cancelled.', isSoon_(s.date)));
+    if (s.requester !== who.email) notify_(st, s.requester, 'Your coverage request was cancelled', [slotLine_(st, s)], who.me.name + ' cancelled this request:', isSoon_(s.date));
     return getAppData();
   });
 }
@@ -1041,7 +1116,7 @@ function assignBackup(signupId) {
     if (!availability_(st, t, s, true)) throw new Error(nameOf_(st, g.email) + ' isn’t free anymore.');
     const kind = remainingKind_(s.fill);
     setCells_(TABLES.signups, g._row, Object.assign({ kind }, snapshot_(st, t, s)));
-    mail_(g.email, 'You’re covering (' + kind.toLowerCase() + ')', [slotLine_(st, s)], who.me.name + ' moved you from backup to covering:');
+    notify_(st, g.email, 'You’re covering (' + kind.toLowerCase() + ')', [slotLine_(st, s)], who.me.name + ' moved you from backup to covering:', isSoon_(s.date));
     return getAppData();
   });
 }
@@ -1064,8 +1139,8 @@ function adminAssign(slotId, email) {
     if (existing) setCells_(TABLES.signups, existing._row, fields);
     else appendRow_(TABLES.signups, Object.assign({ id: newId_(), slotId, email: t.email, created: nowStr_(), status: 'Active' }, fields));
     const lines = [slotLine_(st, s)].concat(s.notes ? ['Notes: ' + s.notes] : []);
-    mail_(t.email, 'You’ve been assigned to cover (' + kind.toLowerCase() + ')', lines, who.me.name + ' assigned you to cover:');
-    if (s.requester !== who.email) mail_(s.requester, t.name + ' was assigned to cover (' + kind.toLowerCase() + ')', [slotLine_(st, s)]);
+    notify_(st, t.email, 'You’ve been assigned to cover (' + kind.toLowerCase() + ')', lines, who.me.name + ' assigned you to cover:', isSoon_(s.date));
+    if (s.requester !== who.email) notify_(st, s.requester, t.name + ' was assigned to cover (' + kind.toLowerCase() + ')', [slotLine_(st, s)], '', isSoon_(s.date));
     return getAppData();
   });
 }
@@ -1075,7 +1150,7 @@ function nudge(slotId) {
   const who = me_(st);
   const s = st.slotById[slotId];
   if (!s || (s.requester !== who.email && !canManage_(st, who, s.requester))) throw new Error('Couldn’t find that request.');
-  return { data: getAppData(), sent: notifyCandidates_([slotId]) };
+  return { data: getAppData(), sent: notifyCandidates_([slotId], true).sent };
 }
 
 /* ---------- Announcements ---------- */
@@ -1097,7 +1172,7 @@ function adminPostAnnouncement(a) {
     if (a.email) {
       const subject = (level === 'Urgent' ? 'All hands: ' : 'Announcement: ') + (message.length > 60 ? message.slice(0, 57) + '…' : message);
       st.teachers.filter(t => t.email && t.active && (dept === 'All' || t.dept === dept))
-        .forEach(t => mail_(t.email, subject, [message], who.me.name + ' posted:'));
+        .forEach(t => notify_(st, t.email, subject, [message], who.me.name + ' posted:', level === 'Urgent'));
     }
     return getAppData();
   });
@@ -1182,38 +1257,72 @@ function adminEmailPayroll(month, dept) {
 
 function installDailyTrigger() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'dailyReminder').forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('dailyReminder').timeBased().everyDays(1).atHour(6).create();
-  SpreadsheetApp.getUi().alert('Daily reminders are on. They go out around 6 AM.');
+  const hours = settings_().digestHours.length ? settings_().digestHours : [6];
+  hours.forEach(h => ScriptApp.newTrigger('dailyReminder').timeBased().everyDays(1).atHour(h).create());
+  SpreadsheetApp.getUi().alert('Daily emails are on. They go out around ' + hours.map(h => (h % 12 || 12) + (h < 12 ? ' AM' : ' PM')).join(' and ') + '.');
 }
 
+// The daily digest: one email per person with everything since the last one.
+// (Named dailyReminder so triggers set up by older versions keep working.)
 function dailyReminder() {
   const st = state_();
   const cfg = settings_();
+  const props = PropertiesService.getScriptProperties();
+  const last = props.getProperty('lastDigest') || '';
   const today = today_();
+  const soon = schoolDayFrom_(calendarMap_(), fmtDate_(new Date(Date.now() + 864e5)));
   const limit = fmtDate_(new Date(Date.now() + cfg.remindDays * 864e5));
-  const openBy = {}, coverBy = {}, allOpen = [];
-  st.slots.slice().sort(bySlot_).forEach(s => {
-    if (!live_(s) || s.date < today) return;
-    if (!s.fill.filled && s.date <= limit) {
-      const line = slotLine_(st, s) + (s.fill.backups ? ' (' + s.fill.backups + ' backup' + (s.fill.backups > 1 ? 's' : '') + ')' : '');
-      (openBy[s.requester] = openBy[s.requester] || []).push(line);
-      allOpen.push({ line, dept: deptOf_(st, s.requester) });
+  const live = st.slots.filter(s => live_(s) && s.date >= today).sort(bySlot_);
+  const queued = readTable_(TABLES.outbox).filter(o => o.status === 'Queued');
+  const sections = {};
+  const add = (e, title, html) => { if (!e) return; (sections[e] = sections[e] || []).push('<h3 style="margin:18px 0 6px;font-size:16px">' + esc_(title) + '</h3>' + html); };
+  const list = lines => '<ul>' + lines.map(l => '<li>' + esc_(l) + '</li>').join('') + '</ul>';
+  const updates = items => items.map(o => {
+    let lines = []; try { lines = JSON.parse(o.lines); } catch (err) {}
+    return '<p style="margin:8px 0 2px"><b>' + esc_(o.subject) + '</b>' + (o.intro ? '<br>' + esc_(o.intro) : '') + '</p>' + list(lines);
+  }).join('');
+
+  st.teachers.filter(t => t.email && t.active).forEach(t => {
+    const e = t.email, instant = wantsInstant_(st, e);
+    // 1. Updates that were held for the digest
+    const mine = queued.filter(o => o.to === e);
+    if (mine.length) add(e, 'Updates', updates(mine));
+    // 2. What they're covering today or the next school day
+    const covers = live.filter(s => s.date <= soon && s.signups.some(g => g.email === e && g.kind !== KINDS.BACKUP));
+    if (covers.length) add(e, 'You’re covering', list(covers.map(s => {
+      const g = s.signups.find(x => x.email === e);
+      return slotLine_(st, s) + (g.kind !== KINDS.FULL ? ' [' + g.kind.toLowerCase() + ']' : '') + (s.notes ? '. Notes: ' + s.notes : '');
+    })));
+    // 3. Their own absences that still need coverage soon
+    const short = live.filter(s => s.requester === e && !s.fill.filled && s.date <= limit);
+    if (short.length) add(e, 'Your absences still need coverage', list(short.map(s => slotLine_(st, s) +
+      (s.fill.backups ? ' (' + s.fill.backups + ' backup' + (s.fill.backups > 1 ? 's' : '') + ' available)' : ''))));
+    // 4. Periods they could cover (digest people only; instant people already got these). Sent when something is new.
+    if (!instant && !t.noSchedule) {
+      const open = live.filter(s => !s.fill.filled && !s.signups.some(g => g.email === e) && availability_(st, t, s));
+      const isNew = s => !last || s.created > last;
+      if (open.some(isNew)) add(e, 'Periods you could cover', '<p style="margin:4px 0">Tap a button to sign up. You’ll confirm in the app first.</p>' +
+        open.map(s => slotBlock_(st, s, isNew(s))).join(''));
     }
-    if (s.date === today) {
-      s.signups.forEach(g => {
-        if (g.kind !== KINDS.BACKUP) (coverBy[g.email] = coverBy[g.email] || []).push(slotLine_(st, s) + ' [' + g.kind.toLowerCase() + ']' + (s.notes ? ' Notes: ' + s.notes : ''));
-      });
+    // 5. Chairs: their department's uncovered periods soon. Masters: the whole school.
+    if (/admin|master/i.test(t.role)) {
+      const master = /master/i.test(t.role);
+      const gaps = live.filter(s => !s.fill.filled && s.date <= limit && (master || deptOf_(st, s.requester) === t.dept));
+      if (gaps.length) add(e, (master ? 'School' : 'Department') + ': still uncovered', list(gaps.map(s => {
+        const d = deptOf_(st, s.requester);
+        return (master && d ? '[' + d + '] ' : '') + slotLine_(st, s);
+      })) + '<p style="margin:4px 0">You can assign someone in the Admin tab.</p>');
     }
   });
-  Object.keys(openBy).forEach(e => mail_(e, 'Still uncovered: ' + openBy[e].length + ' period(s)', openBy[e], 'These periods don’t have full coverage yet:'));
-  Object.keys(coverBy).forEach(e => mail_(e, 'You’re covering today', coverBy[e]));
-  // Department admins get their department's list; masters get the whole school's
-  st.teachers.filter(t => t.email && t.active && /admin|master/i.test(t.role)).forEach(t => {
-    const master = /master/i.test(t.role);
-    const mine = allOpen.filter(o => master || o.dept === t.dept).map(o => (master && o.dept ? '[' + o.dept + '] ' : '') + o.line);
-    if (mine.length) mail_(t.email, (master ? 'School' : 'Department') + ': ' + mine.length + ' period(s) still uncovered', mine,
-      'These upcoming periods need coverage. You can assign someone in the Admin tab.');
-  });
+  // Queued updates for anyone no longer on the active roster still go out
+  const leftover = {};
+  queued.forEach(o => { if (!st.teachers.some(t => t.email === o.to && t.active)) (leftover[o.to] = leftover[o.to] || []).push(o); });
+  Object.keys(leftover).forEach(e => add(e, 'Updates', updates(leftover[e])));
+
+  Object.keys(sections).forEach(e => sendHtml_(e, 'Sub coverage: your daily update', sections[e].join('')));
+  queued.forEach(o => setCells_(TABLES.outbox, o._row, { status: 'Sent' }));
+  props.setProperty('lastDigest', nowStr_());
+  return Object.keys(sections).length;
 }
 
 /* ===== Demo school: Science (real schedule, disguised names), Math (fictional), and the principal's office ===== */
@@ -1263,7 +1372,7 @@ var DEMO_OFFICE={name:'Dr. Hale',dept:'Principal’s Office'};
 DEMO_OWNER='hale@demo.school';
 function demoEmail(name){return name.toLowerCase().replace(/^dr\.\s*/,'').replace(/[^a-z]/g,'')+'@demo.school';}
 function demoSeed(){
-  DEMO_SS.sheets={}; DEMO_MAIL.length=0; SETTINGS_=null;
+  DEMO_SS.sheets={}; DEMO_MAIL.length=0; SETTINGS_=null; for(var k in DEMO_PROPS) delete DEMO_PROPS[k];
   var cols=[2,3,4,5,6,8,9,10,11,12];
   [['Science',DEMO_SCIENCE],['Math',DEMO_MATH]].forEach(function(dep){
     var sch=DEMO_SS.insertSheet('Schedule - '+dep[0]); sch.ensure(2,12);
@@ -1303,6 +1412,8 @@ function demoSeed(){
     message:'Heads up: '+niceDate_(nextGold[1][0])+' is a heavy sub day in Science, and several periods still need coverage. If you have a free period, please check Periods Needing a Sub.'});
   as(DEMO_OFFICE.name); adminPostAnnouncement({level:'Normal',dept:'All',until:future[9][0],email:false,
     message:'Reminder: enter planned absences in the tracker at least two school days ahead so departments have time to find coverage.'});
+  // Seeding queued some held emails; start the demo with a clean outbox
+  readTable_(TABLES.outbox).forEach(function(o){setCells_(TABLES.outbox,o._row,{status:'Sent'});});
   DEMO_MAIL.length=0; SETTINGS_=null; DEMO_USER=demoEmail('Luckett');
 }
 /* ===== google.script.run stand-in ===== */
@@ -1322,7 +1433,7 @@ Object.defineProperty(google.script,'run',{get:function(){
 </script>
 <script>
 
-let D=null, TAB='home', REPORT=null, REPORT_MONTH='', OPENVIEW='list', DAYFILTER='', VIEWDEPT='All';
+let D=null, TAB='home', REPORT=null, REPORT_MONTH='', OPENVIEW='list', DAYFILTER='', VIEWDEPT='All', CLAIM=null;
 let ANN={message:'',level:'Normal',until:'',email:false,dept:'All'};
 const newDay=()=>({date:'',day:'',sel:{}});
 let RQ={forEmail:'',days:[newDay()],notes:'',notify:true};
@@ -1404,11 +1515,10 @@ function signupList(s,admin){
 /* ---------- Views ---------- */
 
 function renderNav(){
-  const tabs=[['home','Home',0],['open','Periods Needing a Sub',D.open.filter(s=>!s.mine.length).length],['request','Request Sub Coverage',0],
-    ['mine','My Absences',D.requests.filter(s=>!s.fill.filled).length]].filter(t=>!(D.me.noSchedule&&(t[0]==='mine')));
+  const tabs=[['home','Home',D.requests.filter(s=>!s.fill.filled).length],['open','Periods Needing a Sub',D.open.filter(s=>!s.mine.length).length],['request','Request Sub Coverage',0]];
   if(D.admin) tabs.push(['admin','Admin',D.admin.needs.length]);
   document.getElementById('nav').innerHTML=tabs.map(([k,l,n])=>
-    `<button data-a="tab" data-id="${k}" aria-current="${TAB===k}">${l}${n?`<span class="badge">${n}</span>`:''}</button>`).join('');
+    `<button data-a="tab" data-id="${k}" aria-current="${TAB===k&&!CLAIM}">${l}${n?`<span class="badge">${n}</span>`:''}</button>`).join('');
 }
 
 function viewCalendar(){
@@ -1446,7 +1556,6 @@ function viewOpen(){
   }
   h+=`<h2>${mine.length?'You could also cover':'Periods you can cover'}</h2>`;
   if(!avail.length) return h+`<div class="empty">${DAYFILTER?'Nothing left that you can cover that day.':'Nobody needs coverage during your free periods right now.'}</div>`;
-  h+=`<p class="hint">Your day if you take it:</p>`+legend();
   return h+avail.map(s=>{
     const f=s.fill, a=s.avail, b=[];
     if(!f.filled){
@@ -1458,7 +1567,9 @@ function viewOpen(){
     return `<div class="slot ${fillClass(f)}"><span class="status">${fillLabel(f)}</span>${slotHead(s)}
       <div class="meta">For ${esc(s.requester)}${s.requesterSubject?' ('+esc(s.requesterSubject)+')':''}${f.backups?', '+plural(f.backups,'backup'):''}</div>
       <div class="tags"><span class="tag ${a.tag==='Sub period'?'sub':''}">${esc(a.tag)}</span>${s.sameSubject?'<span class="tag same">Your subject</span>':''}${a.lunch?'<span class="tag">Your lunch</span>':''}</div>
-      ${strip(a.load)}${warns(a.load,true)}${lunchHtml(a.lunch,true)}${notesHtml(s)}<div class="actions">${b.join('')}</div></div>`;
+      ${warns(a.load,true)}${lunchHtml(a.lunch,true)}${notesHtml(s)}
+      <details class="myday"><summary>Show my day</summary>${legend()}${strip(a.load)}</details>
+      <div class="actions">${b.join('')}</div></div>`;
   }).join('');
 }
 
@@ -1508,7 +1619,7 @@ function viewRequest(){
 }
 
 function viewMine(){
-  if(!D.requests.length) return `<h2>My absences</h2><div class="empty">You haven’t submitted any upcoming absences.<div class="actions" style="justify-content:center">${btn('Request sub coverage','tab','request','','primary')}</div></div>`;
+  if(!D.requests.length) return `<h2>My absences</h2><div class="empty">You haven’t submitted any upcoming absences.<div class="actions" style="justify-content:center">${btn('Request sub coverage','tab','request','','primary')}</div></div>`; // (kept for reference; absences now live on Home)
   return `<h2>My absences</h2><p class="hint">Coverage requests you’ve already submitted, and who’s covering each period.</p>`+legend()+D.requests.map(s=>{
     const f=s.fill, backups=s.signups.filter(g=>g.kind==='Backup');
     return `<div class="slot ${fillClass(f)}"><span class="status">${fillLabel(f)}</span>${slotHead(s)}${signupList(s,false)}
@@ -1524,25 +1635,44 @@ function annHtml(a,admin){
     ${admin&&a.canRemove?`<div class="actions">${btn('Remove','annremove',a.id,'','small danger')}</div>`:''}</div>`;
 }
 
+// One of your own absences: a short summary, with everything else under "Manage"
+function absenceCard(s){
+  const f=s.fill, covers=s.signups.filter(g=>g.kind!=='Backup'), backups=s.signups.filter(g=>g.kind==='Backup');
+  return `<div class="slot ${fillClass(f)}"><span class="status">${fillLabel(f)}</span>${slotHead(s)}
+    ${covers.length?`<div class="meta">Covered by ${covers.map(g=>esc(g.name)+(g.kind!=='Full'?' ('+esc(g.kind.toLowerCase())+')':'')).join(', ')}</div>`:''}
+    <details class="manage"><summary>Manage</summary>
+      ${backups.length?`<div class="meta" style="margin-top:6px">Backups</div><ul class="people">${backups.map(g=>`<li class="person"><span><b>${esc(g.name)}</b></span>${f.filled?'':btn('Use this backup','backup',g.id,'','small')}</li>`).join('')}</ul>`:''}
+      ${!f.filled&&s.candidates.length?`<details><summary>${s.candidates.length} free colleague${s.candidates.length>1?'s':''}</summary>${legend()}${candList(s,false)}</details>`:''}
+      ${!f.filled&&!s.candidates.length&&!backups.length?`<div class="warn">No one in the department is free this period. Your chair can help.</div>`:''}
+      <div class="actions">${!f.filled&&s.candidates.length?btn('Email free colleagues','nudge',s.id):''}${btn('Cancel request','cancelslot',s.id,'','danger')}</div>
+    </details></div>`;
+}
+
 function viewHome(){
   let h='';
   if(D.announcements.length) h+=D.announcements.map(a=>annHtml(a,false)).join('');
+  const openN=D.open.filter(s=>!s.mine.length).length;
+  h+=`<div class="bigbtns">
+    <button class="big" data-a="tab" data-id="request"><b>I need a sub</b><span>${D.me.noSchedule?'Request coverage for a teacher':'Request coverage for an absence'}</span></button>
+    ${D.me.noSchedule?`<button class="big" data-a="gocal"><b>See open periods</b><span>Every period that still needs a sub</span></button>`
+      :`<button class="big" data-a="tab" data-id="open"><b>I can cover a period</b><span>${openN?plural(openN,'open period')+' you could take':'Nothing open in your free periods right now'}</span></button>`}
+  </div>`;
+  const covering=D.open.filter(s=>s.mine.length);
+  if(covering.length) h+=`<h2>You’re covering</h2><ul class="outlist">${covering.map(s=>{const m=s.mine[0];
+    return `<li><span><b>${fmtDate(s.date)}, period ${s.period}</b>${m.kind!=='Full'?' ('+esc(m.kind.toLowerCase())+')':''}<span class="meta" style="display:block;margin:0">${where(s.cls,s.room)}, for ${esc(s.requester)}</span>${s.notes?`<span class="notes" style="display:block;margin-top:2px">${linkify(s.notes)}</span>`:''}</span>
+      ${btn(m.kind==='Backup'?'Drop backup':'I can’t make it','unsign',m.id,'','small danger')}</li>`;}).join('')}</ul>`;
+  if(D.requests.length) h+=`<h2>Your absences</h2>`+D.requests.map(absenceCard).join('');
   const O=D.out;
   h+=`<h2>${O.isToday?'Out today':'Out '+fmtDate(O.date)}</h2>`;
   h+=O.people.length?`<ul class="outlist">${O.people.slice().sort((a,b)=>(a.dept||'').localeCompare(b.dept||'')||a.name.localeCompare(b.name)).map(p=>`<li><span><b>${esc(p.name)}</b>${D.me.master&&p.dept?', '+esc(p.dept):p.subject?', '+esc(p.subject):''}<span class="meta" style="display:block;margin:0">Period${p.periods.length>1?'s':''} ${p.periods.join(', ')}</span></span>
       <span class="${p.covered?'ok':'needs'}">${p.covered?'Covered':'Needs a sub'}</span></li>`).join('')}</ul>`
     :`<div class="empty">No one has a planned absence${O.isToday?' today':' that day'}.</div>`;
-  const need=D.board.reduce((n,b)=>n+Object.values(b.needs).reduce((x,y)=>x+y,0),0);
-  if(need){
-    const can=D.board.reduce((n,b)=>n+Object.values(b.mine).reduce((x,y)=>x+y,0),0);
-    h+=`<h2>Coming up</h2><div class="callout"><span><b>${plural(need,'period')}</b> still ${need===1?'needs':'need'} a sub${can?`, and you can cover <b>${can}</b>`:''}.</span>${btn('See them','gocal','','','small')}</div>`;
-  }
-  return h+thanksHtml();
+  return h+`<h2 style="margin-top:34px">Thanks board</h2>`+thanksHtml();
 }
 
 function thanksHtml(){
   const T=D.thanks, since=D.since?` since ${fmtDate(D.since)}`:' this year';
-  let h=`<h2>Your covers${since}</h2><div class="stats">
+  let h=`<h2 style="font-size:.95rem;color:var(--muted)">Your covers${since}</h2><div class="stats">
     <div class="stat"><b>${T.mine.teaching}</b><span>Teaching</span></div>
     <div class="stat"><b>${T.mine.supervision}</b><span>Supervision</span></div>
     <div class="stat"><b>${T.mine.tough}</b><span>Tough days${T.mine.superTough?` (${T.mine.superTough} super)`:''}</span></div></div>
@@ -1594,6 +1724,24 @@ function viewAdmin(){
   return h;
 }
 
+// Opened from a button in an email: confirm before signing up (email scanners sometimes "click" links)
+function viewClaim(){
+  const c=CLAIM, s=D.open.find(x=>x.id===c.slot);
+  let h=`<h2>Sign up to cover</h2>`;
+  if(!s) return h+`<div class="empty">This period isn’t available anymore. It may already be covered, or your schedule shows you aren’t free then.<div class="actions" style="justify-content:center">${btn('See periods needing a sub','claimdone','open','','primary')}</div></div>`;
+  if(s.mine.length) return h+`<div class="empty">You’re already signed up for this one (${esc(s.mine[0].kind.toLowerCase())}).<div class="actions" style="justify-content:center">${btn('Go to Home','claimdone','home','','primary')}</div></div>`;
+  const f=s.fill, k=c.kind;
+  const taken=(k!=='Backup'&&f.filled)||(k==='Full'&&(f.first||f.second))||(k==='First half'&&f.first)||(k==='Second half'&&f.second);
+  const opts=[];
+  if(!f.filled){ if(!f.first&&!f.second) opts.push(btn('Cover full period','claimgo',s.id,'Full','primary'));
+    if(!f.first) opts.push(btn('First half','claimgo',s.id,'First half')); if(!f.second) opts.push(btn('Second half','claimgo',s.id,'Second half')); }
+  opts.push(btn('Be a backup','claimgo',s.id,'Backup','quiet'));
+  return h+`<div class="slot">${slotHead(s)}<div class="meta">For ${esc(s.requester)}</div>${notesHtml(s)}${warns(s.avail.load,true)}${lunchHtml(s.avail.lunch,true)}
+    ${taken?`<div class="warn">Someone just took that. Here’s what’s still open:</div><div class="actions">${opts.join('')}${btn('Not now','claimdone','home')}</div>`
+      :`<p style="margin:14px 0 0"><b>You’re signing up for ${k==='Full'?'the full period':k==='Backup'?'backup':'the '+esc(k.toLowerCase())}.</b></p>
+        <div class="actions">${btn('Confirm','claimgo',s.id,k,'primary')}${btn('Not now','claimdone','home')}</div>`}</div>`;
+}
+
 function render(){
   if(D.error==='notInRoster'){
     document.getElementById('view').innerHTML=`<div class="empty">Your account (${esc(D.email||'unknown')}) isn’t on the roster yet. Ask whoever manages the tracker to add your school email to the Roster tab.</div>`;
@@ -1602,9 +1750,14 @@ function render(){
   if(TAB==='admin'&&!D.admin) TAB='home';
   document.getElementById('who').textContent=D.me.name+(D.me.dept?', '+D.me.dept:'')+(D.me.master?' (master)':D.me.admin?' (admin)':'');
   renderNav();
-  document.getElementById('view').innerHTML={home:viewHome,open:viewOpen,request:viewRequest,mine:viewMine,admin:viewAdmin}[TAB]();
+  document.getElementById('view').innerHTML=CLAIM?viewClaim():({home:viewHome,open:viewOpen,request:viewRequest,admin:viewAdmin}[TAB]||viewHome)();
 }
 function load(){call('getAppData').then(d=>{D=d;render();});}
+// Email buttons open the app with ?claim=<id>&kind=<kind>
+function start(){
+  try{ google.script.url.getLocation(function(loc){ const p=(loc&&loc.parameter)||{}; if(p.claim) CLAIM={slot:p.claim,kind:p.kind||'Full'}; load(); }); }
+  catch(e){ load(); }
+}
 
 /* ---------- Events ---------- */
 
@@ -1613,7 +1766,9 @@ document.addEventListener('click',e=>{
   const el=e.target.closest('[data-a]'); if(!el) return;
   const a=el.dataset.a, id=el.dataset.id, arg=el.dataset.arg;
   const set=d=>{D=d;render();};
-  if(a==='tab'){TAB=id;DAYFILTER='';render();window.scrollTo(0,0);}
+  if(a==='tab'){TAB=id;DAYFILTER='';CLAIM=null;render();window.scrollTo(0,0);}
+  else if(a==='claimgo'){call('signUp',id,arg).then(d=>{CLAIM=null;TAB='home';set(d);window.scrollTo(0,0);toast(arg==='Backup'?'You’re a backup for this period. Thanks!':'You’re signed up. Thanks!');}).catch(()=>{});}
+  else if(a==='claimdone'){CLAIM=null;TAB=id||'home';render();window.scrollTo(0,0);}
   else if(a==='signup'){call('signUp',id,arg).then(d=>{set(d);toast(arg==='Backup'?'You’re a backup for this period.':'Signed up. Thanks!');});}
   else if(a==='unsign'){if(confirm('Remove this sign-up? The people involved will get an email.'))call('cancelSignup',id).then(d=>{set(d);toast('Sign-up removed.');});}
   else if(a==='cancelslot'){if(confirm('Cancel this request? Anyone signed up will get an email.'))call('cancelSlot',id).then(d=>{set(d);toast('Request cancelled.');});}
@@ -1625,7 +1780,7 @@ document.addEventListener('click',e=>{
   else if(a==='openview'){OPENVIEW=id;render();}
   else if(a==='dayfilter'){DAYFILTER=id;OPENVIEW='list';render();window.scrollTo(0,0);}
   else if(a==='clearfilter'){DAYFILTER='';render();}
-  else if(a==='gocal'){TAB='open';OPENVIEW='calendar';DAYFILTER='';render();window.scrollTo(0,0);}
+  else if(a==='gocal'){TAB='open';OPENVIEW='calendar';DAYFILTER='';CLAIM=null;render();window.scrollTo(0,0);}
   else if(a==='annlevel'){ANN.level=id;render();}
   else if(a==='annpost'){
     if(!ANN.message.trim()) return toast('Write a message first.',true);
@@ -1644,8 +1799,8 @@ document.addEventListener('click',e=>{
     call('createRequest',{forEmail:RQ.forEmail,notes:RQ.notes,notify:RQ.notify,days}).then(r=>{
       const forOther=!!RQ.forEmail;
       RQ={forEmail:'',days:[newDay()],notes:'',notify:true,sel:{}};
-      D=r.data;TAB=forOther?'admin':'mine';render();window.scrollTo(0,0);
-      toast('Request sent.'+(r.sent?' Emailed '+plural(r.sent,'free colleague')+'.':''));
+      D=r.data;TAB=forOther?'admin':'home';render();window.scrollTo(0,0);
+      toast('Request sent.'+(r.sent?' Emailed '+plural(r.sent,'free colleague')+' now.':'')+(r.queued?' '+(r.queued===1?'1 more person':r.queued+' more people')+' will see it in tomorrow’s email.':''));
     }).catch(()=>{});
   }
 });
@@ -1678,7 +1833,7 @@ demoSeed();
 /* ===== Demo controls ===== */
 window.confirm=function(){return true;};
 function demoAfterCall(){document.getElementById('mailn').textContent=DEMO_MAIL.length;}
-function demoClear(){REPORT=null;DAYFILTER='';RQ={forEmail:'',days:[newDay()],notes:'',notify:true};ANN={message:'',level:'Normal',until:'',email:false};}
+function demoClear(){REPORT=null;DAYFILTER='';CLAIM=CLAIM||null;RQ={forEmail:'',days:[newDay()],notes:'',notify:true};ANN={message:'',level:'Normal',until:'',email:false};}
 (function(){
   var sel=document.getElementById('as');
   var fillSel=function(){
@@ -1695,16 +1850,28 @@ function demoClear(){REPORT=null;DAYFILTER='';RQ={forEmail:'',days:[newDay()],no
   document.getElementById('resetbtn').addEventListener('click',function(){demoSeed();fillSel();sel.value=DEMO_USER;TAB='home';OPENVIEW='list';demoClear();demoAfterCall();load();toast('Demo reset.');});
   var panel=document.getElementById('mailpanel');
   document.getElementById('mailbtn').addEventListener('click',function(){
-    var who=function(e){var t=DEMO_TEACHERS.find(function(x){return demoEmail(x[0])===e;});return t?t[0]:e;};
+    var who=function(e){var r=readTable_(TABLES.roster).find(function(x){return x.email===e;});return r?r.name:e;};
     document.getElementById('maillist').innerHTML=DEMO_MAIL.length?DEMO_MAIL.map(function(m){
-      return '<div class="mail"><div class="to">To '+esc(who(m.to))+' · from “'+esc(m.from)+'”'+(m.replyTo?' · replies go to '+esc(who(m.replyTo)):'')+'</div><b>'+esc(m.subject)+'</b><div class="body">'+m.html+'</div></div>';
+      return '<div class="mail" data-to="'+esc(m.to)+'"><div class="to">To '+esc(who(m.to))+' · from “'+esc(m.from)+'”'+(m.replyTo?' · replies go to '+esc(who(m.replyTo)):'')+'</div><b>'+esc(m.subject)+'</b><div class="body">'+m.html+'</div></div>';
     }).join(''):'<div class="mail">No emails yet. Post a request, sign up, or assign someone, and they’ll show up here.</div>';
     panel.classList.add('open');});
   document.getElementById('mailclose').addEventListener('click',function(){panel.classList.remove('open');});
-  panel.addEventListener('click',function(e){if(e.target===panel)panel.classList.remove('open');});
+  panel.addEventListener('click',function(e){
+    if(e.target===panel){panel.classList.remove('open');return;}
+    var a=e.target.closest('a'); if(!a) return;
+    e.preventDefault();
+    var href=a.getAttribute('href')||'', m=href.match(/claim=([^&]+)&kind=([^&]+)/), box=a.closest('.mail');
+    if(!m||!box){panel.classList.remove('open');return;}
+    // Act as the person the email was sent to, then show the confirm screen
+    DEMO_USER=box.getAttribute('data-to'); sel.value=DEMO_USER;
+    CLAIM={slot:decodeURIComponent(m[1]),kind:decodeURIComponent(m[2])}; demoClear(); panel.classList.remove('open'); load();
+  });
+  document.getElementById('digestbtn').addEventListener('click',function(){
+    var n=dailyReminder(); demoAfterCall(); toast(n?'Digest sent to '+n+' people. Open Emails sent to read them.':'Nothing new for a digest right now.');
+  });
 })();
 
-load();
+start();
 
 </script>
 </body>
