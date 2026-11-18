@@ -78,6 +78,11 @@ button.danger{color:var(--maroon)}
 button.small{min-height:36px;padding:6px 12px;font-size:.88rem}
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 body.busy button{opacity:.55;pointer-events:none}
+/* While the app is waiting on Google, say so (shown after a short delay so quick taps don't flash it) */
+body.busy::after{content:"One moment…";position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:30;
+  background:var(--ink);color:var(--surface);padding:10px 20px;border-radius:22px;font-weight:700;font-size:.95rem;
+  box-shadow:0 4px 14px rgba(0,0,0,.18);animation:waitin .2s ease-out .35s both}
+@keyframes waitin{from{opacity:0}to{opacity:1}}
 
 /* Day strip: the person's day with this cover added */
 .strip{display:inline-flex;gap:3px;margin-top:8px;vertical-align:middle}
@@ -406,12 +411,24 @@ function normDate_(v) {
 function withLock_(fn) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
-  try { return fn(); } finally { lock.releaseLock(); }
+  try { return cached_(fn); } finally { lock.releaseLock(); }
 }
+
+// Speed: every small read of the sheet takes about a tenth of a second, so during one
+// action (opening the app, posting a request) each tab is read once and remembered.
+// Writing to a tab forgets it, so the next read is fresh. Nothing is kept between actions.
+let CACHE_ = null;
+function cached_(fn) {
+  if (CACHE_) return fn();
+  CACHE_ = {};
+  try { return fn(); } finally { CACHE_ = null; }
+}
+function forget_(name) { if (CACHE_) { delete CACHE_['rows:' + name]; delete CACHE_.schedule; } }
 
 /* ---------- Sheet tables ---------- */
 
 function table_(t) {
+  if (CACHE_ && CACHE_['sheet:' + t.name]) return CACHE_['sheet:' + t.name];
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName(t.name);
   const fresh = !sh;
@@ -423,25 +440,36 @@ function table_(t) {
     // Plain text so dates and periods aren't reformatted
     if (t.text && sh.getMaxRows() > 1) sh.getRange(2, 1, sh.getMaxRows() - 1, t.headers.length).setNumberFormat('@');
   }
+  if (CACHE_) CACHE_['sheet:' + t.name] = sh;
   return sh;
 }
 
 function readTable_(t) {
-  const sh = table_(t);
-  const n = sh.getLastRow() - 1;
-  if (n < 1) return [];
-  return sh.getRange(2, 1, n, t.keys.length).getValues().map((r, i) => {
+  const key = 'rows:' + t.name;
+  if (CACHE_ && CACHE_[key]) return CACHE_[key].map(o => Object.assign({}, o)); // copies: callers add fields
+  // Read the header and the rows in one go; only fix up the tab (table_) if its header is wrong
+  let sh = CACHE_ && CACHE_['sheet:' + t.name] || SpreadsheetApp.getActiveSpreadsheet().getSheetByName(t.name);
+  let all = sh ? sh.getRange(1, 1, Math.max(sh.getLastRow(), 1), t.keys.length).getValues() : null;
+  if (!all || all[0].slice(0, t.headers.length).map(String).join('|') !== t.headers.join('|')) {
+    sh = table_(t);
+    all = sh.getRange(1, 1, Math.max(sh.getLastRow(), 1), t.keys.length).getValues();
+  } else if (CACHE_) CACHE_['sheet:' + t.name] = sh;
+  const rows = all.slice(1).map((r, i) => {
     const o = { _row: i + 2 };
     t.keys.forEach((k, j) => { o[k] = r[j] instanceof Date ? fmtDate_(r[j]) : String(r[j]).trim(); });
     return o;
   }).filter(o => o[t.keys[0]] !== '');
+  if (CACHE_) CACHE_[key] = rows.map(o => Object.assign({}, o));
+  return rows;
 }
 
 function appendRow_(t, obj) {
+  forget_(t.name);
   table_(t).appendRow(t.keys.map(k => (obj[k] === undefined ? '' : String(obj[k]))));
 }
 
 function setCells_(t, row, obj) {
+  forget_(t.name);
   const sh = table_(t);
   Object.keys(obj).forEach(k => sh.getRange(row, t.keys.indexOf(k) + 1).setValue(String(obj[k])));
 }
@@ -467,7 +495,7 @@ function settings_() {
 function ensureSettings_() {
   const have = {};
   readTable_(TABLES.settings).forEach(r => { have[r.key] = 1; });
-  DEFAULT_SETTINGS.forEach(d => { if (!have[d[0]]) table_(TABLES.settings).appendRow(d); });
+  DEFAULT_SETTINGS.forEach(d => { if (!have[d[0]]) { forget_(TABLES.settings.name); table_(TABLES.settings).appendRow(d); } });
 }
 
 function calendarMap_() {
@@ -495,6 +523,7 @@ function schoolDayFrom_(cal, start) {
 
 // Reads every tab named "Schedule" or "Schedule - <Department>"
 function readSchedule_() {
+  if (CACHE_ && CACHE_.schedule) return CACHE_.schedule;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const pre = CONFIG.SCHEDULE_PREFIX;
   const tabs = ss.getSheets().filter(sh => { const n = sh.getName().trim(); return n === pre || n.indexOf(pre + ' - ') === 0; });
@@ -522,6 +551,7 @@ function readSchedule_() {
       num++;
     }
   });
+  if (CACHE_) CACHE_.schedule = teachers;
   return teachers;
 }
 
@@ -905,7 +935,8 @@ function classesOf_(t) {
 
 /* ---------- API for the web app ---------- */
 
-function getAppData() {
+function getAppData() { return cached_(() => getAppData_()); }
+function getAppData_() {
   const st = state_();
   const who = me_(st), email = who.email, me = who.me;
   if (!me) return { error: 'notInRoster', email };
@@ -1180,7 +1211,8 @@ function adminAssign(slotId, email) {
   });
 }
 
-function nudge(slotId) {
+function nudge(slotId) { return cached_(() => nudge_(slotId)); }
+function nudge_(slotId) {
   const st = state_();
   const who = me_(st);
   const s = st.slotById[slotId];
@@ -1246,7 +1278,8 @@ function payrollData_(st, month, dept) {
   return { month, dept: dept || '', summary: Object.keys(per).map(k => per[k]).sort((a, b) => a.dept.localeCompare(b.dept) || a.name.localeCompare(b.name)), detail };
 }
 
-function adminPayroll(month) {
+function adminPayroll(month) { return cached_(() => adminPayroll_(month)); }
+function adminPayroll_(month) {
   const st = state_();
   const who = me_(st);
   if (!who.admin) throw new Error('Only admins can see payroll reports.');
@@ -1268,7 +1301,8 @@ function adminPayroll(month) {
 }
 
 // dept (masters only): limit the emailed report to one department
-function adminEmailPayroll(month, dept) {
+function adminEmailPayroll(month, dept) { return cached_(() => adminEmailPayroll_(month, dept)); }
+function adminEmailPayroll_(month, dept) {
   const st = state_();
   const who = me_(st);
   if (!who.admin) throw new Error('Only admins can see payroll reports.');
@@ -1292,7 +1326,8 @@ function adminEmailPayroll(month, dept) {
 
 // Every request in one month, past and future, grouped by date.
 // Chairs see their department's absences; masters see every department.
-function adminMonth(month) {
+function adminMonth(month) { return cached_(() => adminMonth_(month)); }
+function adminMonth_(month) {
   const st = state_();
   const who = me_(st);
   if (!who.admin) throw new Error('Only admins can see the month calendar.');
@@ -1321,7 +1356,8 @@ function installDailyTrigger() {
 
 // The daily digest: one email per person with everything since the last one.
 // (Named dailyReminder so triggers set up by older versions keep working.)
-function dailyReminder() {
+function dailyReminder() { return cached_(() => dailyReminder_()); }
+function dailyReminder_() {
   const st = state_();
   const cfg = settings_();
   const props = PropertiesService.getScriptProperties();
