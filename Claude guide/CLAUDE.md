@@ -6,7 +6,8 @@ This folder supports a Google Doc that Mike Lucki (AP Physics 1 and Honors Physi
 - **Doc:** "Claude for Teachers:" in Mike's Google Drive. ID `1CesAOD8j9sCBV3wro2wTdSH-8A8Kr9nXGZlC_oDQ1LQ`.
   - https://docs.google.com/document/d/1CesAOD8j9sCBV3wro2wTdSH-8A8Kr9nXGZlC_oDQ1LQ/edit
 - **Tabs (as of Nov 18, 2026):**
-  1. **Overview** (tab `t.faayrd3citw2`): currently empty. It's probably meant as a landing page or table of contents; ask Mike before filling it.
+  1. **Overview** (tab `t.faayrd3citw2`): a short "Start here" landing page (filled Nov 18). It has a two-sentence intro, a "What's in each tab" list (each tab name links to its tab), and a "Where to start" list that links to specific headings in the other tabs.
+     - **Keep it in sync.** When a tab is added, renamed, or split, or a linked heading is renamed or removed, update the Overview in the same task. Heading links point at heading IDs, so a deleted or re-created heading breaks its link. The current heading links: "Don't care about the press release…" (`h.op2l9pny2m3m`), "Ok that's great, but I'm a boomer…" (`h.308z89kkwdrt`), and "Interested, but need an example…" (`h.66ssp4m473hd`) in the Claude tab, plus "How Claude walked me through GitHub…" (`h.5x9922zltho`) in the Nov Update tab.
   2. **Claude** (tab `t.0`): the original guide. It covers getting Claude for Teachers, Claude vs. Gemini vs. ChatGPT, getting started with natural speech, the Gemini → Claude prompt workflow, the chemistry and biology examples, and hosting on GitHub.
   3. **Nov Update: Flipping AP1** (tab `t.4tpsmoj0zg0j`): Cowork, the flipped Momentum unit, screenshots, things he didn't expect it to handle, workflow then and now, how Claude walked him through GitHub (with prompts to try), advice for colleagues, and what's next.
   - Tab IDs matter: every Docs edit needs the `tabId`, or it lands in the first tab.
