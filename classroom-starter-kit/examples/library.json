@@ -1,0 +1,30 @@
+{
+ "title": "Example Library",
+ "brand": "#1d4ed8",
+ "accent": "#f59e0b",
+ "items": [
+  {
+   "topic": "Math",
+   "title": "Counting Apples",
+   "kind": "screen",
+   "file": "count-apples.html",
+   "about": "Calm style. Count to 7 together, pick the number, and see 5 + 2."
+  },
+  {
+   "topic": "Math",
+   "title": "Counting Apples (bright style)",
+   "kind": "screen",
+   "file": "count-apples-bright.html",
+   "about": "The same activity in the brighter style, for comparison."
+  },
+  {
+   "topic": "Math",
+   "title": "Count and Circle",
+   "kind": "printable",
+   "file": "count-and-circle.html",
+   "pdf": "count-and-circle.pdf",
+   "key": "count-and-circle-KEY.pdf",
+   "about": "Count pictures, circle the number, trace 1–7."
+  }
+ ]
+}

@@ -67,6 +67,14 @@ A running log for the guide. Dates are approximate (taken from chat timestamps).
 - Rewrote the GitHub section from the shared sick-day chat: how Claude walked him through GitHub, plus prompts to try.
 - Created this folder.
 
+## Nov 18–20: finishing the Momentum unit
+- **ML7–ML9:** elastic vs. inelastic with bar charts (optional, due after Thanksgiving), explosions and three-object systems, and momentum vs. energy as the test review. All nine mini-lessons are built, each with a notes sheet and KEY.
+- **A notation rule:** Mike found primes (v′) hard for students to track, so from ML6 on the lessons use i/f subscripts, and points a, b, c, d for multi-stage problems. The rule went into CLAUDE.md so later lessons follow it, and ML6 and ML7 were updated.
+- **Catching mistakes:** Mike flagged a ramp diagram in ML9 that showed the wrong moment at "c" and blocks floating off the track. Claude redrew it on the lesson and the notes sheet. Claude also caught an answer choice in ML7 that was physically possible when it was meant to be wrong.
+- **Using Claude as a second reader:** checking a colleague's worksheet answers (and finding a problem labeled "elastic" that wasn't), whether a student's work–energy derivation was right when the key expected FΔt (it was), which binder problems students could do after a given lesson, and which slide numbers to tag "covered in mini-lesson."
+- **Unit map refreshed** to match what was actually built, with the open items left for Mike.
+- **Starter kit moved** into the `projects` repo so it syncs between computers.
+
 ## Other projects (separate tasks; see their own folders in this repo)
 - `sub-tracker/`: department sub-coverage tracker (Google Sheet + Apps Script) for the school's new planned-absence policy.
 - `homework-checker/`: previews students' OnCampus homework downloads and builds a scores column for the gradebook.

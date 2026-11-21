@@ -50,7 +50,7 @@ This folder supports a Google Doc that Mike Lucki (AP Physics 1 and Honors Physi
 - **Source pages for screenshots** live in his repos (in `Claude Work` on his laptop):
   - `PhysicsSims/ap1/momentum/` (lessons) and `PhysicsSims/ap1/momentum/index.html` (unit page)
   - `teaching-materials/Energy materials/FRQ review/` (private)
-  - The kindergarten starter kit is in `Claude Work/classroom-starter-kit/` (not in any repo, so it does not sync between computers).
+  - The classroom starter kit (started for a kindergarten class, set up for any grade) is in `projects/classroom-starter-kit/`.
 
 ## Reading Mike's other Claude chats
 He sometimes shares a claude.ai/share link as a source.

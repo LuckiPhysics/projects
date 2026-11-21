@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Counting Apples</title>
+<style>
+  /* Screen activities: teacher-led, projected or on a smartboard. Big, high-contrast, few words. */
+  :root {
+    /* School colors: set these from about-my-class.md. Used only as accents. */
+    --brand: #1d4ed8; --brand-ink: #ffffff; --brand-soft: #e6eefe; --accent2: #f59e0b;
+    --bg: #fbfaf7; --card: #ffffff; --ink: #1b2233; --muted: #5d667a; --line: #dfe3ec;
+    --good: #15803d; --good-soft: #e4f6ea; --try: #b45309; --try-soft: #fff4e0;
+    --c1: #ef4444; --c2: #3b82f6; --c3: #22c55e; --c4: #f59e0b; --c5: #a855f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #10151f; --card: #1b2333; --ink: #f1f4fa; --muted: #a6afc2; --line: #313b50; --brand-soft: #22304d; --good-soft: #163522; --try-soft: #3a2a10; }
+  }
+  :root[data-theme="dark"] { --bg: #10151f; --card: #1b2333; --ink: #f1f4fa; --muted: #a6afc2; --line: #313b50; --brand-soft: #22304d; --good-soft: #163522; --try-soft: #3a2a10; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink); font: 600 clamp(22px, 2.6vw, 40px)/1.35 "Comic Sans MS", "Chalkboard SE", "Segoe UI", system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
+  button { font: inherit; color: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+  .topbar { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 16px; z-index: 5; }
+  .topbar .title { font-size: 18px; color: var(--muted); font-family: system-ui, sans-serif; }
+  .topbar .tools { display: flex; gap: 8px; }
+  .tool { min-height: 44px; min-width: 44px; padding: 0 12px; border-radius: 12px; border: 2px solid var(--line); background: var(--card); font: 600 16px system-ui, sans-serif; }
+  .stage { min-height: 100%; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 72px 24px 120px; }
+  .slide { display: none; width: 100%; max-width: 1400px; text-align: center; }
+  .slide.active { display: block; animation: pop .25s ease-out; }
+  @keyframes pop { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: none; } }
+  h1 { font-size: min(2.2em, 9vh); line-height: 1.1; margin: 0 0 .3em; }
+  h2 { font-size: min(1.6em, 7vh); line-height: 1.15; margin: 0 0 .4em; }
+  .big { font-size: min(3.5em, 12vh); font-weight: 800; line-height: 1; }
+  .huge { font-size: min(6em, 17vh); font-weight: 800; line-height: 1; }
+  .muted { color: var(--muted); }
+  .brand-bar { height: 10px; width: 160px; border-radius: 99px; background: var(--brand); margin: 0 auto .6em; box-shadow: 60px 0 0 var(--accent2); }
+  svg { max-width: 100%; height: auto; max-height: 36vh; }
+  .topbar svg, .tool svg { max-height: none; }
+  svg text { fill: var(--ink); font-family: inherit; }
+  /* Builds: .reveal items appear one at a time on Next (like PowerPoint animations) */
+  .reveal { visibility: hidden; opacity: 0; transition: opacity .3s; }
+  .reveal.show { visibility: visible; opacity: 1; }
+  /* Tap-to-count: tap each [data-count] item; it gets the next number */
+  [data-count] { cursor: pointer; }
+  .count-badge { font-weight: 800; }
+  .counter { display: inline-block; min-width: 2.2em; padding: .1em .5em; border-radius: .4em; background: var(--brand-soft); border: 4px solid var(--brand); font-size: 1.6em; }
+  /* Choice buttons for whole-class answers (tap = show if right) */
+  .choices { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; margin-top: .6em; }
+  .choice { min-width: 140px; min-height: 120px; padding: 10px 28px; border-radius: 28px; border: 5px solid var(--line); background: var(--card); font-size: 1.8em; font-weight: 800; }
+  .choice.right { border-color: var(--good); background: var(--good-soft); }
+  .choice.try { border-color: var(--try); background: var(--try-soft); }
+  .say { margin-top: .5em; font-size: 1.1em; min-height: 1.4em; }
+  .bottom { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 20px calc(14px + env(safe-area-inset-bottom)); }
+  .nav { min-width: 120px; min-height: 72px; border-radius: 22px; border: none; font-size: 28px; font-weight: 800; padding: 0 28px; }
+  .nav.next { background: var(--brand); color: var(--brand-ink); }
+  .nav.back { background: var(--card); border: 3px solid var(--line); }
+  .dots { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .dots span { width: 14px; height: 14px; border-radius: 50%; background: var(--line); }
+  .dots span.on { background: var(--brand); }
+  /* Teacher notes: hidden for the class, shown with ?teacher at the end of the address */
+  .notes { display: none; }
+  body.teacher .notes { display: block; margin: 1em auto 0; max-width: 1100px; text-align: left; font: 500 18px/1.45 system-ui, sans-serif; background: var(--try-soft); border-left: 6px solid var(--try); border-radius: 12px; padding: 12px 16px; }
+  body.teacher .reveal { visibility: visible; opacity: 1; }
+  @media print { .topbar, .bottom { display: none; } .slide { display: block !important; page-break-after: always; } .reveal { visibility: visible; opacity: 1; } }
+  /* ---- Notes drawer (board): a quick peek at this slide's talking points ---- */
+  .notes-drawer { display: none; position: fixed; left: 50%; transform: translateX(-50%); bottom: 104px; width: min(900px, calc(100% - 32px)); max-height: 45vh; overflow: auto; z-index: 6;
+    background: var(--card); border: 3px solid var(--try); border-radius: 16px; padding: 12px 18px; text-align: left; font: 500 20px/1.45 system-ui, sans-serif; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+  .notes-drawer.open { display: block; }
+  .notes-drawer b:first-child { display: block; color: var(--try); font-size: 15px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .notes ul, .notes-drawer ul, .pv-notes ul, .script-notes ul { margin: .3em 0; padding-left: 1.2em; }
+  .say-line { font-weight: 700; }
+  .ref { color: var(--muted); font-size: .85em; }
+
+  /* ---- Presenter view (?presenter): for the teacher's laptop ---- */
+  body.presenter { font: 500 18px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  body.presenter .topbar, body.presenter .bottom { display: none; }
+  .pv { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 10px; padding: 12px 16px; }
+  .pv-top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 16px; }
+  .pv-title { font-weight: 800; font-size: 20px; } .pv-count { color: var(--muted); } .pv-clock { font-variant-numeric: tabular-nums; font-weight: 700; margin-left: auto; }
+  .pv-status.on { color: var(--good); } .pv-status.off { color: var(--muted); }
+  .pv-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; min-height: 0; }
+  .pv-left { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+  .pv-label { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .frame { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border: 2px solid var(--line); border-radius: 12px; background: var(--bg); }
+  .frame.small { width: 55%; }
+  .frame-inner { position: absolute; top: 0; left: 0; width: 1600px; height: 900px; transform-origin: top left; display: flex; align-items: center; justify-content: center; font: 600 40px/1.35 "Comic Sans MS", "Chalkboard SE", "Segoe UI", system-ui, sans-serif; pointer-events: none; }
+  .frame-inner .slide { display: block; animation: none; padding: 30px; }
+  .frame-inner svg { max-height: 330px; }
+  .frame-inner h1 { font-size: 88px; } .frame-inner h2 { font-size: 64px; } .frame-inner .big { font-size: 130px; } .frame-inner .huge { font-size: 180px; }
+  .frame-inner .reveal { transition: none; }
+  .frame-inner .end { font-size: 60px; color: var(--muted); }
+  .pv-notes { font-size: 24px; line-height: 1.5; overflow: auto; height: 100%; background: var(--card); border: 2px solid var(--line); border-radius: 12px; padding: 14px 18px; }
+  .pv-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .pv-tip { color: var(--muted); font-size: 14px; text-align: center; }
+  @media (max-width: 800px) { .pv { position: static; } body.presenter { overflow: auto; } .pv-main { grid-template-columns: 1fr; } }
+
+  /* ---- Script card (?script): every slide with its notes, printable ---- */
+  body.script { font: 500 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body.script .topbar, body.script .bottom { display: none; }
+  .script-wrap { max-width: 1000px; margin: 0 auto; padding: 20px 16px; }
+  .script-title { font-size: 24px; margin: 0; } .script-sub { color: var(--muted); margin: 2px 0 14px; }
+  .script-row { display: grid; grid-template-columns: 300px 1fr; gap: 14px; border-top: 1px solid var(--line); padding: 10px 0; break-inside: avoid; }
+  .thumb { position: relative; width: 300px; height: 169px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .thumb-inner { position: absolute; top: 0; left: 0; width: 1600px; height: 900px; transform: scale(.1875); transform-origin: top left; display: flex; align-items: center; justify-content: center; font: 600 40px/1.35 "Comic Sans MS", "Chalkboard SE", "Segoe UI", system-ui, sans-serif; }
+  .thumb-inner .slide { display: block; animation: none; } .thumb-inner svg { max-height: 330px; }
+  .thumb-inner h1 { font-size: 88px; } .thumb-inner h2 { font-size: 64px; } .thumb-inner .big { font-size: 130px; } .thumb-inner .huge { font-size: 180px; }
+  .script-notes .num { font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  @media print { body.script .script-row { page-break-inside: avoid; } body.script .slide { page-break-after: auto; } }
+  @media (max-width: 640px) { .script-row { grid-template-columns: 1fr; } }
+
+  /* ---- Calm style (build with --calm): low visual load, matches simple curriculum slides ---- */
+  body.calm { --bg: #ffffff; font-family: "Century Gothic", "Avenir", "Segoe UI", system-ui, sans-serif; }
+  :root[data-theme="dark"] body.calm { --bg: #111620; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body.calm { --bg: #111620; } }
+  body.calm .slide.active { animation: none; }
+  body.calm .reveal { transition: none; }
+  body.calm .brand-bar { display: none; }
+  body.calm .topbar .tool { opacity: .55; } body.calm .topbar .tool:hover, body.calm .topbar .tool:focus { opacity: 1; }
+  body.calm .dots span { width: 10px; height: 10px; }
+  body.calm .nav.next { background: var(--card); color: var(--ink); border: 3px solid var(--brand); }
+  body.calm .choice { border-width: 4px; }
+
+</style>
+</head>
+<body class="calm">
+<div class="topbar"><span class="title">Counting Apples</span><span class="tools"><button class="tool" id="notesBtn" aria-label="Show my notes" title="Show my notes (N)">📝 Notes</button><button class="tool" id="presBtn" aria-label="Presenter view" title="Open presenter view on this computer">🖥 Presenter</button><button class="tool" id="fsBtn" aria-label="Full screen">⛶ Full screen</button><button class="tool" id="themeBtn" aria-label="Light or dark">◐ Auto</button></span></div>
+<main class="stage">
+<section class="slide">
+  <div class="brand-bar"></div>
+  <h1>How many apples?</h1>
+  <svg viewBox="0 0 1180 260" aria-label="Seven apples"><g ><circle cx="140" cy="150" r="46" style="fill:var(--c1)"/><rect x="136" y="88" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="158" cy="98" rx="16" ry="8" transform="rotate(-25 158 98)" style="fill:var(--c3)"/></g><g ><circle cx="290" cy="120" r="46" style="fill:var(--c1)"/><rect x="286" y="58" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="308" cy="68" rx="16" ry="8" transform="rotate(-25 308 68)" style="fill:var(--c3)"/></g><g ><circle cx="440" cy="160" r="46" style="fill:var(--c1)"/><rect x="436" y="98" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="458" cy="108" rx="16" ry="8" transform="rotate(-25 458 108)" style="fill:var(--c3)"/></g><g ><circle cx="590" cy="115" r="46" style="fill:var(--c1)"/><rect x="586" y="53" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="608" cy="63" rx="16" ry="8" transform="rotate(-25 608 63)" style="fill:var(--c3)"/></g><g ><circle cx="740" cy="155" r="46" style="fill:var(--c1)"/><rect x="736" y="93" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="758" cy="103" rx="16" ry="8" transform="rotate(-25 758 103)" style="fill:var(--c3)"/></g><g ><circle cx="890" cy="125" r="46" style="fill:var(--c1)"/><rect x="886" y="63" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="908" cy="73" rx="16" ry="8" transform="rotate(-25 908 73)" style="fill:var(--c3)"/></g><g ><circle cx="1040" cy="160" r="46" style="fill:var(--c1)"/><rect x="1036" y="98" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="1058" cy="108" rx="16" ry="8" transform="rotate(-25 1058 108)" style="fill:var(--c3)"/></g></svg>
+  <p class="muted">Let's count together!</p>
+  <div class="notes"><p class="say-line">Say: "How many apples do you think there are?"</p><ul><li>Take 2–3 guesses before counting.</li><li>Tap ▶, press →, or click your remote to go on.</li></ul><p class="ref">Curriculum link goes here, e.g., Unit 3, Lesson 4, manual p. 52</p></div>
+</section>
+
+<section class="slide">
+  <h2>Tap each apple as we count</h2>
+  <svg viewBox="0 0 1180 260" aria-label="Seven apples to tap"><g data-count><circle cx="140" cy="150" r="46" style="fill:var(--c1)"/><rect x="136" y="88" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="158" cy="98" rx="16" ry="8" transform="rotate(-25 158 98)" style="fill:var(--c3)"/></g><g data-count><circle cx="290" cy="120" r="46" style="fill:var(--c1)"/><rect x="286" y="58" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="308" cy="68" rx="16" ry="8" transform="rotate(-25 308 68)" style="fill:var(--c3)"/></g><g data-count><circle cx="440" cy="160" r="46" style="fill:var(--c1)"/><rect x="436" y="98" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="458" cy="108" rx="16" ry="8" transform="rotate(-25 458 108)" style="fill:var(--c3)"/></g><g data-count><circle cx="590" cy="115" r="46" style="fill:var(--c1)"/><rect x="586" y="53" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="608" cy="63" rx="16" ry="8" transform="rotate(-25 608 63)" style="fill:var(--c3)"/></g><g data-count><circle cx="740" cy="155" r="46" style="fill:var(--c1)"/><rect x="736" y="93" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="758" cy="103" rx="16" ry="8" transform="rotate(-25 758 103)" style="fill:var(--c3)"/></g><g data-count><circle cx="890" cy="125" r="46" style="fill:var(--c1)"/><rect x="886" y="63" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="908" cy="73" rx="16" ry="8" transform="rotate(-25 908 73)" style="fill:var(--c3)"/></g><g data-count><circle cx="1040" cy="160" r="46" style="fill:var(--c1)"/><rect x="1036" y="98" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="1058" cy="108" rx="16" ry="8" transform="rotate(-25 1058 108)" style="fill:var(--c3)"/></g></svg>
+  <p>We counted <span class="counter">0</span></p>
+  <button class="tool" data-reset>↺ Count again</button>
+  <div class="notes"><p class="say-line">Say: "Let's count together. Touch each apple only once."</p><ul><li>Invite one child to the board to tap while everyone counts out loud.</li><li>Look for one tap = one number.</li><li>"↺ Count again" starts over for the next helper.</li></ul></div>
+</section>
+
+<section class="slide">
+  <h2>Which number shows how many apples?</h2>
+  <div class="choices" data-yes="Yes! 7 apples!" data-no="Let's count again!">
+    <button class="choice">6</button><button class="choice" data-right>7</button><button class="choice">8</button>
+  </div>
+  <p class="say"></p>
+  <div class="notes"><p class="say-line">Say: "Which number tells how many apples?"</p><ul><li>Fingers up first, then a helper taps.</li><li>Answer: <b>7</b>.</li></ul></div>
+</section>
+
+<section class="slide">
+  <h2>5 apples and 2 more</h2>
+  <div style="display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:20px">
+    <svg viewBox="0 0 640 220" style="width:min(48%,560px)" aria-label="Five apples"><g ><circle cx="110" cy="110" r="46" style="fill:var(--c1)"/><rect x="106" y="48" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="128" cy="58" rx="16" ry="8" transform="rotate(-25 128 58)" style="fill:var(--c3)"/></g><g ><circle cx="230" cy="110" r="46" style="fill:var(--c1)"/><rect x="226" y="48" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="248" cy="58" rx="16" ry="8" transform="rotate(-25 248 58)" style="fill:var(--c3)"/></g><g ><circle cx="350" cy="110" r="46" style="fill:var(--c1)"/><rect x="346" y="48" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="368" cy="58" rx="16" ry="8" transform="rotate(-25 368 58)" style="fill:var(--c3)"/></g><g ><circle cx="470" cy="110" r="46" style="fill:var(--c1)"/><rect x="466" y="48" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="488" cy="58" rx="16" ry="8" transform="rotate(-25 488 58)" style="fill:var(--c3)"/></g><g ><circle cx="590" cy="110" r="46" style="fill:var(--c1)"/><rect x="586" y="48" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="608" cy="58" rx="16" ry="8" transform="rotate(-25 608 58)" style="fill:var(--c3)"/></g></svg>
+    <span class="big reveal">+</span>
+    <svg viewBox="0 0 280 220" style="width:min(22%,240px)" class="reveal" aria-label="Two apples"><g ><circle cx="110" cy="110" r="46" style="fill:var(--c1)"/><rect x="106" y="48" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="128" cy="58" rx="16" ry="8" transform="rotate(-25 128 58)" style="fill:var(--c3)"/></g><g ><circle cx="230" cy="110" r="46" style="fill:var(--c1)"/><rect x="226" y="48" width="8" height="22" rx="3" style="fill:#7c4a1e"/><ellipse cx="248" cy="58" rx="16" ry="8" transform="rotate(-25 248 58)" style="fill:var(--c3)"/></g></svg>
+  </div>
+  <p class="huge reveal">5 + 2 = 7</p>
+  <div class="notes"><p class="say-line">Say: "Here are 5 apples. Now 2 more come."</p><ul><li>Each ▶ adds one piece: the plus, the 2 apples, then the number sentence.</li><li>◀ takes the last piece away.</li></ul></div>
+</section>
+
+<section class="slide">
+  <h1>Show me 7 on your fingers!</h1>
+  <p class="big">7</p>
+  <div class="notes"><p class="say-line">Say: "Show me 7 on your fingers!"</p><ul><li>Scan for 5 on one hand and 2 on the other.</li></ul></div>
+</section>
+
+</main>
+<nav class="bottom"><button class="nav back" id="backBtn" aria-label="Back">◀</button><div class="dots" id="dots"></div><button class="nav next" id="nextBtn" aria-label="Next">▶</button></nav>
+<script>
+// Screen-activity engine. Works with touch (smartboard, iPad), mouse, keyboard arrows, or a presentation clicker.
+// Page markup: <main class="stage"> with <section class="slide"> children. Inside a slide:
+//   .reveal                        appears one at a time on Next (like PowerPoint builds)
+//   [data-count]                   kids tap to number it 1, 2, 3...; the slide's .counter shows the total
+//   .choices > .choice[data-right] tap: the right one turns green, others say "try again"
+//   .notes                         teacher talking points (never shown to the class by default)
+// Ways to open the same file:
+//   normal              the board. 📝 pops this slide's notes up for a moment (or press N).
+//   ?presenter          presenter view for the teacher's laptop: notes, current + next slide, timer.
+//                       It opens/controls the board window; tapping ▶ on either one moves both.
+//   ?script             a printable script card: every slide, small, with its notes beside it.
+//   ?teacher            preview: every slide's notes shown under it.
+(function () {
+  var root = document.documentElement, body = document.body, q = location.search;
+  var MODE = /[?&]presenter\b/.test(q) ? 'presenter' : /[?&]script\b/.test(q) ? 'script' : /[?&]teacher\b/.test(q) ? 'teacher' : 'board';
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var notesOf = slides.map(function (s) { var n = s.querySelector('.notes'); return n ? n.innerHTML : '<span class="muted">No notes for this slide.</span>'; });
+  var cur = 0;
+
+  // ---------- Theme + full screen ----------
+  var modes = ['auto', 'light', 'dark'], mode = 'auto', themeBtn = document.getElementById('themeBtn');
+  try { mode = localStorage.getItem('kit-theme') || 'auto'; } catch (e) {}
+  function applyTheme() { if (mode === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', mode); if (themeBtn) themeBtn.textContent = mode === 'dark' ? '☾ Dark' : (mode === 'light' ? '☀ Light' : '◐ Auto'); }
+  if (themeBtn) themeBtn.addEventListener('click', function () { mode = modes[(modes.indexOf(mode) + 1) % 3]; try { localStorage.setItem('kit-theme', mode); } catch (e) {} applyTheme(); });
+  applyTheme();
+  var fsBtn = document.getElementById('fsBtn');
+  if (fsBtn) fsBtn.addEventListener('click', function () {
+    var d = document, el = d.documentElement;
+    if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+    else if (el.requestFullscreen || el.webkitRequestFullscreen) (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+  });
+
+  // ---------- Slide state: which slide, and how many reveals are showing ----------
+  function reveals(i) { return slides[i].querySelectorAll('.reveal'); }
+  function shownCount(i) { return slides[i].querySelectorAll('.reveal.show').length; }
+  function setShown(i, k) { Array.prototype.forEach.call(reveals(i), function (r, j) { r.classList.toggle('show', j < k); }); }
+  var listeners = [];
+  function changed(fromRemote) { listeners.forEach(function (f) { f(fromRemote); }); }
+  function next() {
+    var k = shownCount(cur);
+    if (k < reveals(cur).length) setShown(cur, k + 1);
+    else if (cur < slides.length - 1) cur++;
+    else return;
+    changed(false);
+  }
+  function back() {
+    var k = shownCount(cur);
+    if (k > 0) setShown(cur, k - 1);
+    else if (cur > 0) cur--;
+    else return;
+    changed(false);
+  }
+  function setState(c, k) { cur = Math.max(0, Math.min(slides.length - 1, c)); setShown(cur, k); changed(true); }
+  document.addEventListener('keydown', function (e) {
+    if (e.target.matches && e.target.matches('input, textarea')) return;
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].indexOf(e.key) >= 0) { e.preventDefault(); next(); }
+    if (['ArrowLeft', 'PageUp', 'Backspace'].indexOf(e.key) >= 0) { e.preventDefault(); back(); }
+    if ((e.key === 'n' || e.key === 'N') && MODE === 'board' && window.kitToggleNotes) window.kitToggleNotes();
+  });
+
+  // ---------- Two windows talking: presenter <-> board (works from a plain file, no internet) ----------
+  var peer = null;
+  function send(msg) { try { if (peer && !peer.closed) peer.postMessage(msg, '*'); } catch (e) {} }
+  window.addEventListener('message', function (e) {
+    var d = e.data || {};
+    if (!d.kit) return;
+    if (!peer) peer = e.source;
+    if (d.kit === 'state') setState(d.cur, d.shown);
+    if (d.kit === 'hello') send({ kit: 'state', cur: cur, shown: shownCount(cur) });
+    if (d.kit === 'bye' && window.kitStatus) window.kitStatus(false);
+  });
+  listeners.push(function (fromRemote) { if (!fromRemote) send({ kit: 'state', cur: cur, shown: shownCount(cur) }); });
+  window.addEventListener('beforeunload', function () { send({ kit: 'bye' }); });
+  function baseURL() { return location.href.split('?')[0].split('#')[0]; }
+
+  // ---------- Tap-to-count and whole-class choices (board) ----------
+  slides.forEach(function (s) {
+    var n = 0, items = s.querySelectorAll('[data-count]'), out = s.querySelector('.counter');
+    Array.prototype.forEach.call(items, function (it) {
+      it.addEventListener('click', function () {
+        if (it.getAttribute('data-counted')) return;
+        n++; it.setAttribute('data-counted', n);
+        var bb = it.getBBox ? it.getBBox() : null;
+        if (bb && it.ownerSVGElement) {
+          var t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          t.setAttribute('x', bb.x + bb.width / 2); t.setAttribute('y', bb.y + bb.height / 2 + 14);
+          t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-size', 40); t.setAttribute('class', 'count-badge');
+          t.setAttribute('style', 'fill:#fff;stroke:#000;stroke-width:1.5;paint-order:stroke'); t.textContent = n;
+          it.parentNode.appendChild(t);
+        } else { it.textContent = n; }
+        if (out) out.textContent = n;
+      });
+    });
+    var reset = s.querySelector('[data-reset]');
+    if (reset) reset.addEventListener('click', function () {
+      n = 0; if (out) out.textContent = '0';
+      Array.prototype.forEach.call(items, function (it) { it.removeAttribute('data-counted'); });
+      Array.prototype.forEach.call(s.querySelectorAll('.count-badge'), function (b) { b.remove(); });
+    });
+  });
+  document.querySelectorAll('.choices').forEach(function (g) {
+    var say = g.parentNode.querySelector('.say');
+    g.querySelectorAll('.choice').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var ok = b.hasAttribute('data-right');
+        b.classList.add(ok ? 'right' : 'try');
+        if (say) say.textContent = ok ? (g.getAttribute('data-yes') || 'Yes!') : (g.getAttribute('data-no') || 'Try again!');
+      });
+    });
+  });
+
+  // =====================================================================
+  if (MODE === 'board' || MODE === 'teacher') {
+    if (MODE === 'teacher') body.classList.add('teacher');
+    var nextBtn = document.getElementById('nextBtn'), backBtn = document.getElementById('backBtn'), dots = document.getElementById('dots');
+    slides.forEach(function () { dots.appendChild(document.createElement('span')); });
+    nextBtn.addEventListener('click', next); backBtn.addEventListener('click', back);
+    // Notes drawer: pops up this slide's notes on the board, for a quick peek
+    var drawer = document.createElement('div'); drawer.className = 'notes-drawer'; drawer.setAttribute('aria-live', 'polite'); body.appendChild(drawer);
+    var notesBtn = document.getElementById('notesBtn');
+    var drawerToggle = function () { drawer.classList.toggle('open'); drawer.innerHTML = '<b>Notes · slide ' + (cur + 1) + '</b>' + notesOf[cur]; };
+    window.kitToggleNotes = drawerToggle;
+    if (notesBtn) notesBtn.addEventListener('click', drawerToggle);
+    drawer.addEventListener('click', drawerToggle);
+    var presBtn = document.getElementById('presBtn');
+    if (presBtn) presBtn.addEventListener('click', function () {
+      var w = window.open(baseURL() + '?presenter', 'kit-presenter', 'width=1200,height=800');
+      if (w) { peer = w; } else alert('Your browser blocked the presenter window. Allow pop-ups for this file, then tap again.');
+    });
+    if (window.opener) { peer = window.opener; send({ kit: 'hello' }); }
+    var render = function () {
+      slides.forEach(function (s, i) { s.classList.toggle('active', i === cur); });
+      Array.prototype.forEach.call(dots.children, function (d, i) { d.classList.toggle('on', i === cur); });
+      backBtn.style.visibility = cur === 0 && !shownCount(0) ? 'hidden' : 'visible';
+      nextBtn.style.visibility = cur === slides.length - 1 && shownCount(cur) === reveals(cur).length ? 'hidden' : 'visible';
+      if (drawer.classList.contains('open')) drawer.innerHTML = '<b>Notes · slide ' + (cur + 1) + '</b>' + notesOf[cur];
+    };
+    listeners.push(render); render();
+  }
+
+  // =====================================================================
+  if (MODE === 'script') {
+    body.classList.add('script');
+    var title = document.title;
+    var wrap = document.createElement('div'); wrap.className = 'script-wrap';
+    wrap.innerHTML = '<h1 class="script-title">' + title + ' · Script card</h1><p class="script-sub">Each slide with its talking points. Print this, or keep it open on your laptop.</p>';
+    slides.forEach(function (s, i) {
+      var row = document.createElement('div'); row.className = 'script-row';
+      var thumb = document.createElement('div'); thumb.className = 'thumb'; var inner = document.createElement('div'); inner.className = 'thumb-inner';
+      var c = s.cloneNode(true); c.classList.add('active'); c.querySelectorAll('.reveal').forEach(function (r) { r.classList.add('show'); }); c.querySelectorAll('.notes').forEach(function (n) { n.remove(); });
+      inner.appendChild(c); thumb.appendChild(inner);
+      var n = document.createElement('div'); n.className = 'script-notes'; n.innerHTML = '<div class="num">Slide ' + (i + 1) + '</div>' + notesOf[i];
+      row.appendChild(thumb); row.appendChild(n); wrap.appendChild(row);
+    });
+    document.querySelector('.stage').replaceWith(wrap);
+  }
+
+  // =====================================================================
+  if (MODE === 'presenter') {
+    body.classList.add('presenter');
+    document.title = 'Presenter · ' + document.title;
+    var pv = document.createElement('div'); pv.className = 'pv';
+    pv.innerHTML =
+      '<div class="pv-top"><span class="pv-title"></span><span class="pv-count"></span><span class="pv-clock" title="Time since you opened this">0:00</span>' +
+      '<span class="pv-status"></span><button class="tool" id="openBoard">Open board window ↗</button></div>' +
+      '<div class="pv-main"><div class="pv-left"><div class="pv-label">On the board now</div><div class="frame" id="nowFrame"><div class="frame-inner"></div></div>' +
+      '<div class="pv-label">Next</div><div class="frame small" id="nextFrame"><div class="frame-inner"></div></div></div>' +
+      '<div class="pv-right"><div class="pv-label">Talking points</div><div class="pv-notes" id="pvNotes"></div></div></div>' +
+      '<div class="pv-nav"><button class="nav back" id="pvBack">◀ Back</button><span class="pv-tip">Tap ▶ here or on the board. Both move together.</span><button class="nav next" id="pvNext">Next ▶</button></div>';
+    document.querySelector('.stage').replaceWith(pv);
+    pv.querySelector('.pv-title').textContent = document.title.replace('Presenter · ', '');
+    document.getElementById('pvBack').addEventListener('click', back);
+    document.getElementById('pvNext').addEventListener('click', next);
+    var statusEl = pv.querySelector('.pv-status');
+    var setStatus = function (on) { statusEl.textContent = on ? '● Board connected' : '○ Board not connected'; statusEl.className = 'pv-status ' + (on ? 'on' : 'off'); };
+    window.kitStatus = setStatus;
+    document.getElementById('openBoard').addEventListener('click', function () {
+      var w = window.open(baseURL(), 'kit-board', 'width=1280,height=760');
+      if (w) { peer = w; setStatus(true); setTimeout(function () { send({ kit: 'state', cur: cur, shown: shownCount(cur) }); }, 600); }
+      else alert('Your browser blocked the board window. Allow pop-ups for this file, then tap again.');
+    });
+    if (window.opener) { peer = window.opener; setStatus(true); send({ kit: 'hello' }); } else setStatus(false);
+    window.addEventListener('message', function (e) { if (e.data && e.data.kit && e.data.kit !== 'bye') setStatus(true); });
+    function fill(frameId, i, k) {
+      var inner = document.querySelector('#' + frameId + ' .frame-inner'); inner.innerHTML = '';
+      if (i >= slides.length) { inner.innerHTML = '<div class="end">End</div>'; return; }
+      var c = slides[i].cloneNode(true); c.classList.add('active'); c.querySelectorAll('.notes').forEach(function (n) { n.remove(); });
+      Array.prototype.forEach.call(c.querySelectorAll('.reveal'), function (r, j) { r.classList.toggle('show', j < k); });
+      inner.appendChild(c);
+    }
+    function fit() { document.querySelectorAll('.frame').forEach(function (f) { f.querySelector('.frame-inner').style.transform = 'scale(' + (f.clientWidth / 1600) + ')'; }); }
+    window.addEventListener('resize', fit);
+    var renderP = function () {
+      var k = shownCount(cur), total = reveals(cur).length;
+      fill('nowFrame', cur, k);
+      if (k < total) fill('nextFrame', cur, k + 1); else fill('nextFrame', cur + 1, 0);
+      document.getElementById('pvNotes').innerHTML = notesOf[cur];
+      pv.querySelector('.pv-count').textContent = 'Slide ' + (cur + 1) + ' of ' + slides.length + (total ? ' · step ' + k + ' of ' + total : '');
+      fit();
+    };
+    listeners.push(renderP); renderP();
+    var t0 = Date.now(), clock = pv.querySelector('.pv-clock');
+    setInterval(function () { var s = Math.floor((Date.now() - t0) / 1000); clock.textContent = Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }, 1000);
+  }
+})();
+
+</script>
+</body>
+</html>
